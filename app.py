@@ -8,7 +8,7 @@ from itertools import combinations
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.8",
+    page_title="THAI AI PROFESSIONAL v7.8 - 15 Formula Frequency",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -222,6 +222,35 @@ def dynamic_formula_wrapper(func, target, mode, daily_number="-"):
         except TypeError: res = func(st_val)
     return safe_digits(res).zfill(length)[-length:]
 
+
+# ==========================================
+# 3.1 ALL 15 FORMULAS: RESULT + DIGIT FREQUENCY
+# ==========================================
+# The 15-formula set intentionally excludes Cross Multiply.
+FORMULAS_15 = [(name, func) for name, func in formulas if name != "Cross Multiply"]
+
+
+def analyse_all_15_formulas(target_number, daily_number="-", mode="back3"):
+    """Return raw/blended results and digit frequency across all 15 formulas."""
+    rows = []
+    combined_digits = []
+
+    for name, func in FORMULAS_15:
+        raw_result = dynamic_formula_wrapper(func, target_number, mode, "-")
+        blended_result = dynamic_formula_wrapper(func, target_number, mode, daily_number)
+        rows.append({
+            "Formula": name,
+            "Raw": raw_result,
+            "Blended": blended_result,
+            "Last 2": blended_result[-2:],
+        })
+        combined_digits.extend(safe_digits(blended_result))
+
+    counts = Counter(combined_digits)
+    # Sort by frequency descending; ties are resolved by digit ascending.
+    frequency = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return rows, frequency, len(combined_digits)
+
 def get_echo_core(history_data):
     if not history_data: return ["0", "1", "2", "3", "4"]
     pool = []
@@ -300,6 +329,40 @@ if menu == "8. All-in-One Master Report":
                 {"สูตร": "Cross Multiply (คูณไขว้)", "สถิติดิบ": cross_raw, "ผสมวัน": cross_res, "เด่น 2 ตัว": cross_res[-2:]},
             ]
             st.table(pd.DataFrame(comp_data))
+
+            # --------------------------------------------------
+            # Full 15-formula report + combined digit frequency
+            # --------------------------------------------------
+            st.markdown("### 🧮 ผลลัพธ์ครบ 15 สูตร (ไม่รวม Cross Multiply)")
+            formula_rows, digit_frequency, digit_total = analyse_all_15_formulas(
+                target_number, daily_number, mode="back3"
+            )
+            st.dataframe(pd.DataFrame(formula_rows), use_container_width=True, hide_index=True)
+
+            st.markdown("### 🔢 ความถี่เลขเมื่อรวมผลลัพธ์จากทั้ง 15 สูตร")
+            freq_df = pd.DataFrame(
+                [{"เลข": digit, "จำนวนครั้ง": count} for digit, count in digit_frequency]
+            )
+            st.dataframe(freq_df, use_container_width=True, hide_index=True)
+
+            if digit_frequency:
+                top_digits = "".join(digit for digit, _ in digit_frequency)
+                top5_digits = "".join(digit for digit, _ in digit_frequency[:5])
+                top3_digits = "".join(digit for digit, _ in digit_frequency[:3])
+                st.markdown(
+                    f"""
+                    <div class="report-card">
+                        <div class="report-title">🏆 สรุปความถี่จาก 15 สูตร รวม {digit_total} หลัก</div>
+                        <p><b>เรียงเลขตามความถี่มากไปน้อย:</b>
+                        <span style="color:#0284c7;font-size:22px;font-weight:800;">{ ' - '.join(top_digits) }</span></p>
+                        <p><b>เลขเด่น 5 ตัว:</b>
+                        <span style="color:#0369a1;font-size:20px;font-weight:800;">{ ' - '.join(top5_digits) }</span></p>
+                        <p><b>เลขเด่น 3 ตัว:</b>
+                        <span style="color:#0369a1;font-size:20px;font-weight:800;">{ ' - '.join(top3_digits) }</span></p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
             # สรุป Super Core & 2D Pairings
             echo_core = get_echo_core(st.session_state.history)
