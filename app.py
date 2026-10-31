@@ -46,7 +46,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.8 MASTER AI"
+VERSION = "THAI AI PROFESSIONAL v7.8 MASTER AI - 15 Formula Frequency FIX"
 
 # ==========================================
 # 2. DEFAULT HISTORY DATA & INITIALIZATION
@@ -210,17 +210,31 @@ formulas = [
 FORMULA_MAP = dict(formulas)
 
 def dynamic_formula_wrapper(func, target, mode, daily_number="-"):
-    target = safe_digits(target).zfill(6)
+    """
+    Apply the daily-number blend to all six base digits, then pass the FULL
+    six-digit value to the formula. The formula itself selects/formats the
+    requested output (first/front3/back3/back2).
+    """
+    target = safe_digits(target).zfill(6)[-6:]
     length = {"first": 6, "front3": 3, "back3": 3, "back2": 2}.get(mode, 3)
+
     if daily_number and daily_number != "-":
         daily_digits = safe_digits(daily_number)
-        target = "".join([str((safe_int(target[i]) + safe_int(daily_digits[i % len(daily_digits)])) % 10) for i in range(len(target))])
-    st_val = target if mode == "first" else target[:3].zfill(6) if mode == "front3" else target[-3:].zfill(6) if mode == "back3" else target[-2:].zfill(6)
-    try: res = func(st_val, mode, daily_number)
+        if daily_digits:
+            target = "".join(
+                str((safe_int(target[i]) + safe_int(daily_digits[i % len(daily_digits)])) % 10)
+                for i in range(6)
+            )
+
+    try:
+        result = func(target, mode, daily_number)
     except TypeError:
-        try: res = func(st_val, mode)
-        except TypeError: res = func(st_val)
-    return safe_digits(res).zfill(length)[-length:]
+        try:
+            result = func(target, mode)
+        except TypeError:
+            result = func(target)
+
+    return safe_digits(result).zfill(length)[-length:]
 
 
 # ==========================================
@@ -231,24 +245,31 @@ FORMULAS_15 = [(name, func) for name, func in formulas if name != "Cross Multipl
 
 
 def analyse_all_15_formulas(target_number, daily_number="-", mode="back3"):
-    """Return raw/blended results and digit frequency across all 15 formulas."""
+    """
+    Calculate the same 15 formulas shown in the report, then count only their
+    blended outputs. Echo Core and Hybrid Pool are deliberately excluded.
+    """
     rows = []
     combined_digits = []
 
     for name, func in FORMULAS_15:
         raw_result = dynamic_formula_wrapper(func, target_number, mode, "-")
         blended_result = dynamic_formula_wrapper(func, target_number, mode, daily_number)
+
         rows.append({
-            "Formula": name,
-            "Raw": raw_result,
-            "Blended": blended_result,
-            "Last 2": blended_result[-2:],
+            "สูตร": name,
+            "เลขดิบ": raw_result,
+            "เลขผสมวัน": blended_result,
+            "ท้าย 2 ตัว": blended_result[-2:],
         })
         combined_digits.extend(safe_digits(blended_result))
 
-    counts = Counter(combined_digits)
+    # Include every digit 0-9, even when its frequency is zero.
+    raw_counts = Counter(combined_digits)
+    counts = {str(digit): raw_counts.get(str(digit), 0) for digit in range(10)}
+
     # Sort by frequency descending; ties are resolved by digit ascending.
-    frequency = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    frequency = sorted(counts.items(), key=lambda item: (-item[1], int(item[0])))
     return rows, frequency, len(combined_digits)
 
 def get_echo_core(history_data):
@@ -337,33 +358,59 @@ if menu == "8. All-in-One Master Report":
             formula_rows, digit_frequency, digit_total = analyse_all_15_formulas(
                 target_number, daily_number, mode="back3"
             )
-            st.dataframe(pd.DataFrame(formula_rows), use_container_width=True, hide_index=True)
+            st.dataframe(
+                pd.DataFrame(formula_rows),
+                use_container_width=True,
+                hide_index=True
+            )
 
-            st.markdown("### 🔢 ความถี่เลขเมื่อรวมผลลัพธ์จากทั้ง 15 สูตร")
+            st.markdown("### 🔢 ความถี่เลขจากผลลัพธ์ 15 สูตรเท่านั้น")
+            st.caption(
+                "นับจากเลขผสมวัน Back3 ของ Formula 1–14 และ Formula Neighbor "
+                "รวม 15 สูตร × 3 หลัก = 45 หลัก โดยไม่รวม Echo Core, Hybrid Pool "
+                "หรือ Cross Multiply"
+            )
             freq_df = pd.DataFrame(
                 [{"เลข": digit, "จำนวนครั้ง": count} for digit, count in digit_frequency]
             )
             st.dataframe(freq_df, use_container_width=True, hide_index=True)
 
-            if digit_frequency:
-                top_digits = "".join(digit for digit, _ in digit_frequency)
-                top5_digits = "".join(digit for digit, _ in digit_frequency[:5])
-                top3_digits = "".join(digit for digit, _ in digit_frequency[:3])
-                st.markdown(
-                    f"""
-                    <div class="report-card">
-                        <div class="report-title">🏆 สรุปความถี่จาก 15 สูตร รวม {digit_total} หลัก</div>
-                        <p><b>เรียงเลขตามความถี่มากไปน้อย:</b>
-                        <span style="color:#0284c7;font-size:22px;font-weight:800;">{ ' - '.join(top_digits) }</span></p>
-                        <p><b>เลขเด่น 5 ตัว:</b>
-                        <span style="color:#0369a1;font-size:20px;font-weight:800;">{ ' - '.join(top5_digits) }</span></p>
-                        <p><b>เลขเด่น 3 ตัว:</b>
-                        <span style="color:#0369a1;font-size:20px;font-weight:800;">{ ' - '.join(top3_digits) }</span></p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+            # Back3 must contain exactly 45 counted digits (15 formulas × 3 digits).
+            if digit_total != 45:
+                st.warning(
+                    f"ตรวจพบจำนวนหลักรวม {digit_total} หลัก แต่ควรเป็น 45 หลัก "
+                    "กรุณาตรวจสอบความยาวผลลัพธ์ของสูตร"
                 )
 
+            top_digits = [digit for digit, _ in digit_frequency]
+            top5_digits = top_digits[:5]
+            top3_digits = top_digits[:3]
+
+            st.markdown(
+                f"""
+                <div class="report-card">
+                    <div class="report-title">🏆 สรุปความถี่จาก 15 สูตร รวม {digit_total} หลัก</div>
+                    <p><b>เรียงเลขตามความถี่มากไปน้อย:</b>
+                    <span style="color:#0284c7;font-size:22px;font-weight:800;">
+                    {' - '.join(top_digits)}</span></p>
+                    <p><b>เลขเด่น 5 ตัว:</b>
+                    <span style="color:#0369a1;font-size:20px;font-weight:800;">
+                    {' - '.join(top5_digits)}</span></p>
+                    <p><b>เลขเด่น 3 ตัว:</b>
+                    <span style="color:#0369a1;font-size:20px;font-weight:800;">
+                    {' - '.join(top3_digits)}</span></p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # Echo Core / Hybrid Pool are separate history-based modules.
+            # They are intentionally NOT merged into the 15-formula frequency count.
+            st.markdown("### 📚 ระบบสถิติย้อนหลัง (แยกจากความถี่ 15 สูตร)")
+            st.caption(
+                "Echo Core และ Hybrid Pool คำนวณจากประวัติย้อนหลัง/เลขฐาน "
+                "จึงแสดงแยกต่างหาก และไม่ถูกนำไปเพิ่มจำนวนครั้งในตารางความถี่ 15 สูตร"
+            )
             # สรุป Super Core & 2D Pairings
             echo_core = get_echo_core(st.session_state.history)
             top_5_digits = " - ".join(echo_core[:5])
