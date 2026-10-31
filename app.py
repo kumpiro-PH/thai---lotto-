@@ -8,7 +8,7 @@ from itertools import combinations
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.8 - 15 Formula Frequency",
+    page_title="THAI AI PROFESSIONAL v7.8 - 16 Formula Multi-Mode Frequency",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -352,67 +352,59 @@ if menu == "8. All-in-One Master Report":
             st.table(pd.DataFrame(comp_data))
 
             # --------------------------------------------------
-            # Full 15-formula report + combined digit frequency
             # --------------------------------------------------
-            st.markdown("### 🧮 ผลลัพธ์ครบ 15 สูตร (ไม่รวม Cross Multiply)")
-            formula_rows, digit_frequency, digit_total = analyse_all_15_formulas(
-                target_number, daily_number, mode="back3"
-            )
-            st.dataframe(
-                pd.DataFrame(formula_rows),
-                use_container_width=True,
-                hide_index=True
-            )
-
-            st.markdown("### 🔢 ความถี่เลขจากผลลัพธ์ 15 สูตรเท่านั้น")
+            # All 16 formulas: frequency split by mode + combined
+            # --------------------------------------------------
+            st.markdown("### 🧮 ความถี่เลขเด่นแยกตามโหมด และรวมทุกโหมด")
             st.caption(
-                "นับจากเลขผสมวัน Back3 ของ Formula 1–14 และ Formula Neighbor "
-                "รวม 15 สูตร × 3 หลัก = 45 หลัก โดยไม่รวม Echo Core, Hybrid Pool "
-                "หรือ Cross Multiply"
+                "นับผลลัพธ์จาก Formula 1–14, Formula Neighbor และ Cross Multiply "
+                "โดยแยกหน้า 3 ตัว / ท้าย 3 ตัว / ท้าย 2 ตัว และรวมทุกโหมด"
             )
-            freq_df = pd.DataFrame(
-                [{"เลข": digit, "จำนวนครั้ง": count} for digit, count in digit_frequency]
-            )
-            # แสดงกราฟความถี่ เรียงตามอันดับเดียวกับตาราง
-            chart_df = freq_df.set_index("เลข")
-            st.bar_chart(chart_df, y="จำนวนครั้ง", use_container_width=True)
-            st.dataframe(freq_df, use_container_width=True, hide_index=True)
 
-            # Back3 must contain exactly 45 counted digits (15 formulas × 3 digits).
-            if digit_total != 45:
-                st.warning(
-                    f"ตรวจพบจำนวนหลักรวม {digit_total} หลัก แต่ควรเป็น 45 หลัก "
-                    "กรุณาตรวจสอบความยาวผลลัพธ์ของสูตร"
+            mode_results, all_formula_rows, combined_frequency, combined_total = (
+                analyse_all_formulas_by_mode(target_number, daily_number)
+            )
+
+            st.markdown("#### 📋 ผลลัพธ์ทุกสูตร")
+            st.dataframe(pd.DataFrame(all_formula_rows), use_container_width=True, hide_index=True)
+
+            mode_tabs = st.tabs(["หน้า 3 ตัว", "ท้าย 3 ตัว", "ท้าย 2 ตัว", "รวมทุกโหมด"])
+
+            def render_frequency_section(frequency, total, heading):
+                st.markdown(f"**{heading} — รวม {total} หลัก**")
+                freq_df = pd.DataFrame(
+                    [{"เลข": digit, "จำนวนครั้ง": count} for digit, count in frequency]
                 )
+                st.bar_chart(freq_df.set_index("เลข"), y="จำนวนครั้ง", use_container_width=True)
+                st.dataframe(freq_df, use_container_width=True, hide_index=True)
+                top = [digit for digit, _ in frequency]
+                counts = dict(frequency)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("🥇 เลขเด่นอันดับ 1", top[0], f"{counts[top[0]]} ครั้ง")
+                c2.metric("🏆 เลขเด่น 3 ตัว", " - ".join(top[:3]))
+                c3.metric("⭐ เลขเด่น 5 ตัว", " - ".join(top[:5]))
 
-            top_digits = [digit for digit, _ in digit_frequency]
-            top5_digits = top_digits[:5]
-            top3_digits = top_digits[:3]
+            for tab, mode_key, mode_label in zip(
+                mode_tabs[:3], ["front3", "back3", "back2"],
+                ["หน้า 3 ตัว", "ท้าย 3 ตัว", "ท้าย 2 ตัว"]
+            ):
+                with tab:
+                    result = mode_results[mode_key]
+                    render_frequency_section(result["frequency"], result["total"], mode_label)
 
-            # แสดงเลขเด่น Top 3 / Top 5 พร้อมจำนวนครั้ง
-            count_lookup = dict(digit_frequency)
-            metric_cols = st.columns(3)
-            metric_cols[0].metric("🥇 เลขเด่นอันดับ 1", top_digits[0], f"{count_lookup[top_digits[0]]} ครั้ง")
-            metric_cols[1].metric("🏆 เลขเด่น 3 ตัว", " - ".join(top3_digits))
-            metric_cols[2].metric("⭐ เลขเด่น 5 ตัว", " - ".join(top5_digits))
+            with mode_tabs[3]:
+                st.markdown("#### ⭐ ความถี่รวมทุกโหมด")
+                st.caption(
+                    "รวมทุกหลักจาก 16 สูตร: หน้า 3 ตัว 48 หลัก + ท้าย 3 ตัว 48 หลัก "
+                    "+ ท้าย 2 ตัว 32 หลัก = 128 หลัก"
+                )
+                render_frequency_section(combined_frequency, combined_total, "รวมหน้า 3 + ท้าย 3 + ท้าย 2")
 
-            st.markdown(
-                f"""
-                <div class="report-card">
-                    <div class="report-title">🏆 สรุปความถี่จาก 15 สูตร รวม {digit_total} หลัก</div>
-                    <p><b>เรียงเลขตามความถี่มากไปน้อย:</b>
-                    <span style="color:#0284c7;font-size:22px;font-weight:800;">
-                    {' - '.join(top_digits)}</span></p>
-                    <p><b>เลขเด่น 5 ตัว:</b>
-                    <span style="color:#0369a1;font-size:20px;font-weight:800;">
-                    {' - '.join(top5_digits)}</span></p>
-                    <p><b>เลขเด่น 3 ตัว:</b>
-                    <span style="color:#0369a1;font-size:20px;font-weight:800;">
-                    {' - '.join(top3_digits)}</span></p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            if combined_total != 128:
+                st.warning(
+                    f"จำนวนหลักรวมที่นับได้ {combined_total} หลัก แต่คาดหวัง 128 หลัก "
+                    "กรุณาตรวจสอบผลลัพธ์ของสูตร"
+                )
 
             # Echo Core / Hybrid Pool are separate history-based modules.
             # They are intentionally NOT merged into the 15-formula frequency count.
