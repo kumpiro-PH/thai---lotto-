@@ -21,7 +21,7 @@ st.caption("15 Formula Frequency Analysis | Streamlit Edition")
 DAILY_NUMBERS = {
     "Monday": "056787",
     "Tuesday": "657872",
-    "Wednesday": "390768",
+    "Wednesday": "211628",
     "Thursday": "897693",
     "Friday": "305687",
     "Saturday": "7890123",
