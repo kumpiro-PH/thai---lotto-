@@ -306,4 +306,149 @@ if menu == "8. All-in-One Master Report":
         target_number = st.text_input("📌 เลขฐาน 6 หลักงวดล่าสุด:", value=default_target, max_chars=6)
     with col2:
         day_choice = st.selectbox("📅 เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "ไม่ใช้ (Manual)"])
-        daily_number = DAILY_NUMBERS.get(day_choice
+        daily_number = DAILY_NUMBERS.get(day_choice, "-")
+
+    if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
+        if len(target_number) != 6 or not target_number.isdigit():
+            st.error("❌ กรุณากรอกเลขฐาน 6 หลักให้ถูกต้อง")
+        else:
+            # การคำนวณแบบผสมวัน vs ดิบ
+            f1_res = dynamic_formula_wrapper(FORMULA_MAP["Formula 1"], target_number, "back2", daily_number)
+            f1_raw = dynamic_formula_wrapper(FORMULA_MAP["Formula 1"], target_number, "back2", "-")
+            f2_res = dynamic_formula_wrapper(FORMULA_MAP["Formula 2"], target_number, "back2", daily_number)
+            f2_raw = dynamic_formula_wrapper(FORMULA_MAP["Formula 2"], target_number, "back2", "-")
+            cross_res = dynamic_formula_wrapper(FORMULA_MAP["Cross Multiply"], target_number, "back2", daily_number)
+            cross_raw = dynamic_formula_wrapper(FORMULA_MAP["Cross Multiply"], target_number, "back2", "-")
+
+            st.markdown("### 📊 เปรียบเทียบผลลัพธ์สูตรเด่น (สถิติดิบ vs ผสมวัน)")
+            comp_data = [
+                {"สูตร": "Formula 1 (ผันแปร)", "สถิติดิบ": f1_raw, "ผสมวัน": f1_res, "เด่น 2 ตัว": f1_res[-2:]},
+                {"สูตร": "Formula 2 (คูณคู่)", "สถิติดิบ": f2_raw, "ผสมวัน": f2_res, "เด่น 2 ตัว": f2_res[-2:]},
+                {"สูตร": "Cross Multiply (คูณไขว้)", "สถิติดิบ": cross_raw, "ผสมวัน": cross_res, "เด่น 2 ตัว": cross_res[-2:]},
+            ]
+            st.table(pd.DataFrame(comp_data))
+
+            # ความถี่เลขเด่นรวม 15 สูตร
+            st.markdown("### 🧮 ความถี่เลขเด่นรวม 15 สูตร (ท้าย 2 ตัว)")
+            st.caption(
+                "ใช้ Formula 1–14 และ Formula Neighbor เท่านั้น "
+                "ไม่รวม Cross Multiply / Echo Core / Hybrid Pool"
+            )
+
+            frequency_rows, frequency, frequency_total = analyse_all_15_formulas(
+                target_number=target_number,
+                daily_number=daily_number,
+                mode="back2"
+            )
+
+            st.markdown("#### 📋 ตรวจสอบผลลัพธ์รายสูตร")
+            st.dataframe(
+                pd.DataFrame(frequency_rows),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.markdown("#### 📊 ตารางความถี่เลข 0–9")
+            frequency_df = pd.DataFrame(
+                [{"เลข": digit, "จำนวนครั้ง": count} for digit, count in frequency]
+            )
+            st.bar_chart(
+                frequency_df.set_index("เลข"),
+                y="จำนวนครั้ง",
+                use_container_width=True
+            )
+            st.dataframe(frequency_df, use_container_width=True, hide_index=True)
+
+            top_digits = [digit for digit, _ in frequency]
+            frequency_counts = dict(frequency)
+            metric1, metric2, metric3 = st.columns(3)
+            metric1.metric(
+                "🥇 เลขเด่นอันดับ 1",
+                top_digits[0],
+                f"{frequency_counts[top_digits[0]]} ครั้ง"
+            )
+            metric2.metric("🏆 เลขเด่น 3 ตัว", " - ".join(top_digits[:3]))
+            metric3.metric("⭐ เลขเด่น 5 ตัว", " - ".join(top_digits[:5]))
+
+            st.markdown("### 📚 ระบบสถิติย้อนหลัง")
+            echo_core = get_echo_core(st.session_state.history)
+            top_5_digits = " - ".join(echo_core[:5])
+            super_core = sorted(list(set(echo_core) & set(list(target_number[:3]))))
+            pairs = [f"{a}{b}" for a, b in combinations(echo_core, 2)]
+            combined_6_pool = list(dict.fromkeys(list(target_number) + echo_core))
+            top_6_digits = " - ".join(combined_6_pool[:6]) if len(combined_6_pool) >= 6 else "0 - 1 - 2 - 4 - 6 - 7"
+
+            st.markdown(f"""
+            <div class="report-card">
+                <div class="report-title">🎯 ชุดเลขเด่น 5–6 ตัวเน้นๆ (แนะนำสำหรับการลงทุน)</div>
+                <p><b>⭐ ชุดเลขเด่น 5 ตัว (Echo Core):</b> <span style="color: #0284c7; font-size: 18px; font-weight: bold;">{top_5_digits}</span></p>
+                <p><b>🌟 ชุดเลขเด่น 6 ตัว (Hybrid Pool):</b> <span style="color: #0369a1; font-size: 18px; font-weight: bold;">{top_6_digits}</span></p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div class="report-card">
+                <div class="report-title">🔥 เลขชนสุดยอด (SUPER CORE) & ชุดวิควิค 2 ตัว</div>
+                <p><b>เลขไหลสะสม (Echo Core):</b> {' - '.join(echo_core)}</p>
+                <p><b>เลขชนสุดยอด (Super Core):</b> {' - '.join(super_core) if super_core else 'ไม่มีเลขชน'}</p>
+                <div><b>ชุดวิน 2 ตัวเด็ด:</b> {" ".join([f'<span class="badge-core">{p}</span>' for p in pairs])}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+# ==========================================
+# 6. MANAGEMENT HISTORY PAGE
+# ==========================================
+elif menu == "1. เพิ่ม/จัดการประวัติหวย":
+    st.title("📚 เพิ่ม / จัดการประวัติหวย")
+    
+    with st.form("add_history_form"):
+        st.subheader("➕ เพิ่มรางวัลงวดใหม่")
+        col_a, col_b, col_c = st.columns(3)
+        date_in = col_a.text_input("งวดวันที่ (เช่น 16 พ.ย. 2569)")
+        day_in = col_b.selectbox("วัน", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+        first_in = col_c.text_input("รางวัลที่ 1 (6 หลัก)")
+        
+        b2_in = st.text_input("ท้าย 2 ตัว (2 หลัก)")
+        
+        submitted = st.form_submit_button("บันทึกข้อมูล")
+        if submitted:
+            if len(first_in) == 6 and first_in.isdigit():
+                st.session_state.history.append({
+                    "date": date_in, "day": day_in, "first": first_in, "back2": b2_in
+                })
+                st.success("✅ บันทึกข้อมูลสำเร็จ!")
+            else:
+                st.error("❌ รางวัลที่ 1 ต้องเป็นตัวเลข 6 หลักเท่านั้น")
+
+    st.subheader("📋 ประวัติสลากย้อนหลังในระบบ")
+    st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True)
+
+# ==========================================
+# 7. BACKTEST PAGE
+# ==========================================
+elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
+    st.title("📈 รันระบบทดสอบย้อนหลัง (Backtest Engine)")
+    
+    if len(st.session_state.history) < 2:
+        st.warning("⚠️ ต้องการข้อมูลอย่างน้อย 2 งวดขึ้นไปในการทำ Backtest")
+    else:
+        st.info(f"ประมวลผลจากประวัติสะสมทั้งหมด {len(st.session_state.history)} งวด")
+        
+        res_b2 = analyse_formulas("back2")
+        st.subheader("🏆 Top 3 สูตรเจาะตำแหน่ง: เลขท้าย 2 ตัว (Back 2)")
+        for rank, item in enumerate(res_b2[:3], 1):
+            st.write(f"**อันดับ {rank}: {item[3]}** | คะแนนคูณน้ำหนัก: {item[0]:.2f} | ความแม่นยำรวม: {item[2]:.2f}%")
+
+# ==========================================
+# 8. SETTINGS PAGE
+# ==========================================
+elif menu == "9. ตั้งค่าน้ำหนัก AI (Settings)":
+    st.title("⚙️ ตั้งค่าน้ำหนัก AI (Weight Settings)")
+    
+    w_f = st.slider("Formula Weight", 0.1, 2.0, st.session_state.ai_settings["formula_weight"])
+    w_c = st.slider("Cross Weight", 0.1, 2.0, st.session_state.ai_settings["cross_weight"])
+    
+    if st.button("บันทึกค่าน้ำหนัก"):
+        st.session_state.ai_settings["formula_weight"] = w_f
+        st.session_state.ai_settings["cross_weight"] = w_c
+        st.success("✅ บันทึกค่าน้ำหนักใหม่เรียบร้อย!")
