@@ -360,16 +360,33 @@ if menu == "8. All-in-One Master Report":
             )
             st.dataframe(frequency_df, use_container_width=True, hide_index=True)
 
+            # เรียงเลขเด่นจากความถี่มากไปน้อย (กรณีเท่ากัน เรียงเลขน้อยไปมาก)
             top_digits = [digit for digit, _ in frequency]
             frequency_counts = dict(frequency)
+
+            # แสดงจำนวนครั้งกำกับเลขเด่นทุกอันดับ เพื่อให้ตรวจสอบย้อนกลับได้
             metric1, metric2, metric3 = st.columns(3)
             metric1.metric(
                 "🥇 เลขเด่นอันดับ 1",
                 top_digits[0],
                 f"{frequency_counts[top_digits[0]]} ครั้ง"
             )
-            metric2.metric("🏆 เลขเด่น 3 ตัว", " - ".join(top_digits[:3]))
-            metric3.metric("⭐ เลขเด่น 5 ตัว", " - ".join(top_digits[:5]))
+
+            top3_text = " - ".join(top_digits[:3])
+            top3_counts = " | ".join(
+                f"{digit}: {frequency_counts[digit]} ครั้ง"
+                for digit in top_digits[:3]
+            )
+            metric2.metric("🏆 เลขเด่น 3 ตัว", top3_text)
+            metric2.caption(top3_counts)
+
+            top5_text = " - ".join(top_digits[:5])
+            top5_counts = " | ".join(
+                f"{digit}: {frequency_counts[digit]} ครั้ง"
+                for digit in top_digits[:5]
+            )
+            metric3.metric("⭐ เลขเด่น 5 ตัว", top5_text)
+            metric3.caption(top5_counts)
 
             if frequency_total != 30:
                 st.warning(
