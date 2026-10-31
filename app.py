@@ -83,7 +83,7 @@ if "ai_settings" not in st.session_state:
 
 DAILY_NUMBERS = {
     "Monday": "6185270", "Tuesday": "7306481", "Wednesday": "6845902",
-    "Thursday": "5078136", "Friday": "9627401", "Saturday": "8413657", "Sunday": "2956814",
+    "Thursday": "5078136", "Friday": "9627401", "Saturday": "8413657", "Sunday": "0426759",
 }
 
 # ==========================================
@@ -303,8 +303,19 @@ if menu == "8. All-in-One Master Report":
 
             # สรุป Super Core & 2D Pairings
             echo_core = get_echo_core(st.session_state.history)
+            top_5_digits = " - ".join(echo_core[:5])
             super_core = sorted(list(set(echo_core) & set(list(target_number[:3]))))
             pairs = [f"{a}{b}" for a, b in combinations(echo_core, 2)]
+            combined_6_pool = list(dict.fromkeys(list(target_number) + echo_core))
+            top_6_digits = " - ".join(combined_6_pool[:6]) if len(combined_6_pool) >= 6 else "0 - 1 - 2 - 4 - 6 - 7"
+
+            st.markdown(f"""
+            <div class="report-card">
+                <div class="report-title">🎯 ชุดเลขเด่น 5–6 ตัวเน้นๆ (แนะนำสำหรับการลงทุน)</div>
+                <p><b>⭐ ชุดเลขเด่น 5 ตัว (Echo Core):</b> <span style="color: #0284c7; font-size: 18px; font-weight: bold;">{top_5_digits}</span></p>
+                <p><b>🌟 ชุดเลขเด่น 6 ตัว (Hybrid Pool):</b> <span style="color: #0369a1; font-size: 18px; font-weight: bold;">{top_6_digits}</span></p>
+            </div>
+            """, unsafe_allow_html=True)
 
             st.markdown(f"""
             <div class="report-card">
