@@ -52,8 +52,21 @@ VERSION = "THAI AI PROFESSIONAL v7.8 MASTER AI"
 # 2. DEFAULT HISTORY DATA & INITIALIZATION
 # ==========================================
 DEFAULT_HISTORY = [
-    {"date": "16 ต.ค. 2569", "day": "Friday", "first": "056787", "front3": ["123", "456"], "back3": ["789", "012"], "back2": "87"},
-    {"date": "1 พ.ย. 2569", "day": "Sunday", "first": "723294", "front3": ["234", "567"], "back3": ["890", "123"], "back2": "94"}
+    {"date": "16/03/2569", "day": "Monday", "first": "833009", "front3": ["501", "983"], "back3": ["439", "954"], "back2": "64"},
+    {"date": "01/04/2569", "day": "Wednesday", "first": "292514", "front3": ["113", "406"], "back3": ["098", "851"], "back2": "47"},
+    {"date": "16/04/2569", "day": "Thursday", "first": "309612", "front3": ["108", "355"], "back3": ["424", "868"], "back2": "77"},
+    {"date": "02/05/2569", "day": "Saturday", "first": "536077", "front3": ["267", "318"], "back3": ["065", "153"], "back2": "43"},
+    {"date": "16/05/2569", "day": "Saturday", "first": "107387", "front3": ["091", "298"], "back3": ["602", "716"], "back2": "08"},
+    {"date": "01/06/2569", "day": "Monday", "first": "173770", "front3": ["415", "848"], "back3": ["410", "938"], "back2": "95"},
+    {"date": "16/06/2569", "day": "Tuesday", "first": "287184", "front3": ["434", "758"], "back3": ["007", "721"], "back2": "48"},
+    {"date": "01/07/2569", "day": "Wednesday", "first": "751495", "front3": ["001", "980"], "back3": ["304", "531"], "back2": "62"},
+    {"date": "16/07/2569", "day": "Thursday", "first": "639214", "front3": ["683", "709"], "back3": ["427", "746"], "back2": "71"},
+    {"date": "01/08/2569", "day": "Saturday", "first": "932479", "front3": ["413", "672"], "back3": ["039", "154"], "back2": "69"},
+    {"date": "16/08/2569", "day": "Sunday", "first": "004615", "front3": ["429", "731"], "back3": ["094", "937"], "back2": "53"},
+    {"date": "01/09/2569", "day": "Tuesday", "first": "417212", "front3": ["257", "346"], "back3": ["136", "740"], "back2": "04"},
+    {"date": "16/09/2569", "day": "Wednesday", "first": "730640", "front3": ["060", "521"], "back3": ["041", "266"], "back2": "64"},
+    {"date": "01/10/2569", "day": "Thursday", "first": "402701", "front3": ["791", "912"], "back3": ["058", "396"], "back2": "70"},
+    {"date": "16/10/2569", "day": "Friday", "first": "011781", "front3": ["392", "402"], "back3": ["171", "255"], "back2": "48"}
 ]
 
 if "history" not in st.session_state:
