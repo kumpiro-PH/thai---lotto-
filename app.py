@@ -406,66 +406,64 @@ if menu == "8. All-in-One Master Report":
             st.table(pd.DataFrame(comp_data))
 
             # --------------------------------------------------
+            # 15 formulas: Back3 only, blended with Daily Number
             # --------------------------------------------------
-            # All 16 formulas: frequency split by mode + combined
-            # --------------------------------------------------
-            st.markdown("### 🧮 ความถี่เลขเด่นแยกตามโหมด และรวมทุกโหมด")
+            st.markdown("### 🧮 ความถี่เลขเด่นรวม 15 สูตร (ท้าย 3 ตัว)")
             st.caption(
-                "นับผลลัพธ์จาก Formula 1–14, Formula Neighbor และ Cross Multiply "
-                "โดยแยกหน้า 3 ตัว / ท้าย 3 ตัว / ท้าย 2 ตัว และรวมทุกโหมด"
+                "ใช้ Formula 1–14 และ Formula Neighbor เท่านั้น "
+                "ไม่รวม Cross Multiply / Echo Core / Hybrid Pool "
+                "นับเลขท้าย 3 ตัวหลังผสม Daily Number รวม 45 หลัก"
             )
 
-            mode_results, all_formula_rows, combined_frequency, combined_total = (
-                analyse_all_formulas_by_mode(target_number, daily_number)
+            frequency_rows, frequency, frequency_total = analyse_all_15_formulas(
+                target_number=target_number,
+                daily_number=daily_number,
+                mode="back3"
             )
 
-            st.markdown("#### 📋 ผลลัพธ์ทุกสูตร")
-            st.dataframe(pd.DataFrame(all_formula_rows), use_container_width=True, hide_index=True)
+            # Detailed audit table: raw output and daily-blended output per formula.
+            st.markdown("#### 📋 ตรวจสอบผลลัพธ์รายสูตร")
+            st.dataframe(
+                pd.DataFrame(frequency_rows),
+                use_container_width=True,
+                hide_index=True
+            )
 
-            mode_tabs = st.tabs(["หน้า 3 ตัว", "ท้าย 3 ตัว", "ท้าย 2 ตัว", "รวมทุกโหมด"])
+            # Frequency table always contains digits 0-9, including zero counts.
+            st.markdown("#### 📊 ตารางความถี่เลข 0–9")
+            frequency_df = pd.DataFrame(
+                [{"เลข": digit, "จำนวนครั้ง": count} for digit, count in frequency]
+            )
+            st.bar_chart(
+                frequency_df.set_index("เลข"),
+                y="จำนวนครั้ง",
+                use_container_width=True
+            )
+            st.dataframe(frequency_df, use_container_width=True, hide_index=True)
 
-            def render_frequency_section(frequency, total, heading):
-                st.markdown(f"**{heading} — รวม {total} หลัก**")
-                freq_df = pd.DataFrame(
-                    [{"เลข": digit, "จำนวนครั้ง": count} for digit, count in frequency]
-                )
-                st.bar_chart(freq_df.set_index("เลข"), y="จำนวนครั้ง", use_container_width=True)
-                st.dataframe(freq_df, use_container_width=True, hide_index=True)
-                top = [digit for digit, _ in frequency]
-                counts = dict(frequency)
-                c1, c2, c3 = st.columns(3)
-                c1.metric("🥇 เลขเด่นอันดับ 1", top[0], f"{counts[top[0]]} ครั้ง")
-                c2.metric("🏆 เลขเด่น 3 ตัว", " - ".join(top[:3]))
-                c3.metric("⭐ เลขเด่น 5 ตัว", " - ".join(top[:5]))
+            top_digits = [digit for digit, _ in frequency]
+            frequency_counts = dict(frequency)
+            metric1, metric2, metric3 = st.columns(3)
+            metric1.metric(
+                "🥇 เลขเด่นอันดับ 1",
+                top_digits[0],
+                f"{frequency_counts[top_digits[0]]} ครั้ง"
+            )
+            metric2.metric("🏆 เลขเด่น 3 ตัว", " - ".join(top_digits[:3]))
+            metric3.metric("⭐ เลขเด่น 5 ตัว", " - ".join(top_digits[:5]))
 
-            for tab, mode_key, mode_label in zip(
-                mode_tabs[:3], ["front3", "back3", "back2"],
-                ["หน้า 3 ตัว", "ท้าย 3 ตัว", "ท้าย 2 ตัว"]
-            ):
-                with tab:
-                    result = mode_results[mode_key]
-                    render_frequency_section(result["frequency"], result["total"], mode_label)
-
-            with mode_tabs[3]:
-                st.markdown("#### ⭐ ความถี่รวมทุกโหมด")
-                st.caption(
-                    "รวมทุกหลักจาก 16 สูตร: หน้า 3 ตัว 48 หลัก + ท้าย 3 ตัว 48 หลัก "
-                    "+ ท้าย 2 ตัว 32 หลัก = 128 หลัก"
-                )
-                render_frequency_section(combined_frequency, combined_total, "รวมหน้า 3 + ท้าย 3 + ท้าย 2")
-
-            if combined_total != 128:
+            if frequency_total != 45:
                 st.warning(
-                    f"จำนวนหลักรวมที่นับได้ {combined_total} หลัก แต่คาดหวัง 128 หลัก "
-                    "กรุณาตรวจสอบผลลัพธ์ของสูตร"
+                    f"นับได้ {frequency_total} หลัก แต่ควรได้ 45 หลัก "
+                    "กรุณาตรวจสอบผลลัพธ์ของทั้ง 15 สูตร"
                 )
 
             # Echo Core / Hybrid Pool are separate history-based modules.
             # They are intentionally NOT merged into the 15-formula frequency count.
-            st.markdown("### 📚 ระบบสถิติย้อนหลัง (แยกจากความถี่ 15 สูตร)")
+            st.markdown("### 📚 ระบบสถิติย้อนหลัง (แยกจากความถี่ 15 สูตรท้าย 3 ตัว)")
             st.caption(
                 "Echo Core และ Hybrid Pool คำนวณจากประวัติย้อนหลัง/เลขฐาน "
-                "จึงแสดงแยกต่างหาก และไม่ถูกนำไปเพิ่มจำนวนครั้งในตารางความถี่ 15 สูตร"
+                "จึงแสดงแยกต่างหาก และไม่ถูกนำไปเพิ่มจำนวนครั้งในตารางความถี่ 15 สูตรท้าย 3 ตัว"
             )
             # สรุป Super Core & 2D Pairings
             echo_core = get_echo_core(st.session_state.history)
