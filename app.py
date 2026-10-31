@@ -272,6 +272,60 @@ def analyse_all_15_formulas(target_number, daily_number="-", mode="back3"):
     frequency = sorted(counts.items(), key=lambda item: (-item[1], int(item[0])))
     return rows, frequency, len(combined_digits)
 
+
+
+def analyse_all_formulas_by_mode(target_number, daily_number="-"):
+    """Count digits from all 16 formulas separately and across all three modes."""
+    mode_definitions = [
+        ("front3", "หน้า 3 ตัว"),
+        ("back3", "ท้าย 3 ตัว"),
+        ("back2", "ท้าย 2 ตัว"),
+    ]
+    results_by_mode = {}
+    all_rows = []
+    combined_digits = []
+
+    for mode, mode_label in mode_definitions:
+        digits_for_mode = []
+        for formula_name, formula_func in formulas:
+            result = dynamic_formula_wrapper(
+                formula_func, target_number, mode, daily_number
+            )
+            all_rows.append({
+                "โหมด": mode_label,
+                "สูตร": formula_name,
+                "ผลลัพธ์": result,
+            })
+            digits_for_mode.extend(safe_digits(result))
+
+        raw_counts = Counter(digits_for_mode)
+        counts = {str(d): raw_counts.get(str(d), 0) for d in range(10)}
+        frequency = sorted(
+            counts.items(), key=lambda item: (-item[1], int(item[0]))
+        )
+        results_by_mode[mode] = {
+            "frequency": frequency,
+            "total": len(digits_for_mode),
+        }
+        combined_digits.extend(digits_for_mode)
+
+    combined_raw_counts = Counter(combined_digits)
+    combined_counts = {
+        str(d): combined_raw_counts.get(str(d), 0) for d in range(10)
+    }
+    combined_frequency = sorted(
+        combined_counts.items(), key=lambda item: (-item[1], int(item[0]))
+    )
+
+    return (
+        results_by_mode,
+        all_rows,
+        combined_frequency,
+        len(combined_digits),
+    )
+
+
+
 def get_echo_core(history_data):
     if not history_data: return ["0", "1", "2", "3", "4"]
     pool = []
