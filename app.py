@@ -328,11 +328,12 @@ if menu == "8. All-in-One Master Report":
             ]
             st.table(pd.DataFrame(comp_data))
 
-            # ความถี่เลขเด่นรวม 15 สูตร
+            # ความถี่เลขเด่นรวม 15 สูตร (Back2)
             st.markdown("### 🧮 ความถี่เลขเด่นรวม 15 สูตร (ท้าย 2 ตัว)")
             st.caption(
                 "ใช้ Formula 1–14 และ Formula Neighbor เท่านั้น "
-                "ไม่รวม Cross Multiply / Echo Core / Hybrid Pool"
+                "ไม่รวม Cross Multiply / Echo Core / Hybrid Pool "
+                "นับผลท้าย 2 ตัวหลังผสม Daily Number รวม 30 หลัก"
             )
 
             frequency_rows, frequency, frequency_total = analyse_all_15_formulas(
@@ -369,6 +370,12 @@ if menu == "8. All-in-One Master Report":
             )
             metric2.metric("🏆 เลขเด่น 3 ตัว", " - ".join(top_digits[:3]))
             metric3.metric("⭐ เลขเด่น 5 ตัว", " - ".join(top_digits[:5]))
+
+            if frequency_total != 30:
+                st.warning(
+                    f"นับได้ {frequency_total} หลัก แต่ควรได้ 30 หลัก "
+                    "กรุณาตรวจสอบผลลัพธ์ของทั้ง 15 สูตร"
+                )
 
             st.markdown("### 📚 ระบบสถิติย้อนหลัง")
             echo_core = get_echo_core(st.session_state.history)
