@@ -46,7 +46,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.8 MASTER AI - 15 Formula Frequency FIX"
+VERSION = "THAI AI PROFESSIONAL v7.9 SMART FORMULA RANKING"
 
 # ==========================================
 # 2. DEFAULT HISTORY DATA & INITIALIZATION
@@ -272,6 +272,106 @@ def analyse_all_15_formulas(target_number, daily_number="-", mode="back3"):
     frequency = sorted(counts.items(), key=lambda item: (-item[1], int(item[0])))
     return rows, frequency, len(combined_digits)
 
+
+def _best_back3_hit(prediction, actual_values):
+    """Best unordered digit overlap against either official back3 result."""
+    pred = safe_digits(prediction)
+    if not pred or not actual_values:
+        return 0
+    best = 0
+    for actual in actual_values:
+        actual = safe_digits(actual)
+        hit = sum((Counter(pred) & Counter(actual)).values())
+        best = max(best, hit)
+    return best
+
+
+def analyse_smart_formula_ranking(target_number, daily_number="-", history_data=None, mode="back3"):
+    """
+    Rank the 15 formulas using walk-forward historical accuracy.
+    Formula definitions and dynamic_formula_wrapper are left unchanged.
+    Historical target uses the next draw's official back3 results when present.
+    """
+    history_data = history_data or []
+    performance = []
+    formula_weights = {}
+
+    # Evaluate only transitions where a next draw exists.
+    for name, func in FORMULAS_15:
+        total_hits = 0
+        total_possible = 0
+        valid_draws = 0
+
+        for index in range(len(history_data) - 1):
+            previous = history_data[index]
+            following = history_data[index + 1]
+
+            actual_values = following.get("back3", [])
+            if isinstance(actual_values, str):
+                actual_values = actual_values.split()
+            actual_values = [safe_digits(x) for x in actual_values if safe_digits(x)]
+
+            # If official back3 data is absent, fall back to the last 3 digits
+            # of the next first-prize number, and label this limitation in UI.
+            if not actual_values:
+                first_value = safe_digits(following.get("first", ""))
+                if len(first_value) >= 3:
+                    actual_values = [first_value[-3:]]
+
+            if not actual_values:
+                continue
+
+            next_day = following.get("day", "")
+            historical_daily = DAILY_NUMBERS.get(next_day, "-")
+            prediction = dynamic_formula_wrapper(
+                func, previous.get("first", ""), "back3", historical_daily
+            )
+            total_hits += _best_back3_hit(prediction, actual_values)
+            total_possible += 3
+            valid_draws += 1
+
+        # Smoothed weight prevents a tiny history from assigning zero weight.
+        accuracy = (total_hits / total_possible) if total_possible else 0.0
+        weight = 0.50 + accuracy
+        formula_weights[name] = weight
+        performance.append({
+            "สูตร": name,
+            "จำนวนงวดทดสอบ": valid_draws,
+            "เลขตรงสะสม": total_hits,
+            "โอกาสเทียบทั้งหมด": total_possible,
+            "ความแม่นยำ (%)": round(accuracy * 100, 2),
+            "น้ำหนัก": round(weight, 4),
+        })
+
+    # Calculate current outputs using the existing formula wrapper.
+    current_outputs = {}
+    for name, func in FORMULAS_15:
+        current_outputs[name] = dynamic_formula_wrapper(
+            func, target_number, "back3", daily_number
+        )
+
+    # When several formulas return the same 3-digit output, divide their
+    # combined contribution so duplicate outputs do not dominate the ranking.
+    output_groups = Counter(current_outputs.values())
+    weighted_scores = {str(d): 0.0 for d in range(10)}
+    raw_counts = Counter()
+
+    for name, output in current_outputs.items():
+        weight = formula_weights.get(name, 0.50)
+        contribution = weight / max(1, output_groups[output])
+        for digit in safe_digits(output):
+            raw_counts[digit] += 1
+            weighted_scores[digit] += contribution
+
+    weighted_ranking = sorted(
+        weighted_scores.items(),
+        key=lambda item: (-item[1], -raw_counts[item[0]], int(item[0]))
+    )
+    performance.sort(
+        key=lambda row: (-row["ความแม่นยำ (%)"], -row["เลขตรงสะสม"], row["สูตร"])
+    )
+    return current_outputs, performance, weighted_ranking, raw_counts
+
 def get_echo_core(history_data):
     if not history_data: return ["0", "1", "2", "3", "4"]
     pool = []
@@ -402,6 +502,69 @@ if menu == "8. All-in-One Master Report":
                 </div>
                 """,
                 unsafe_allow_html=True,
+            )
+
+
+            # --------------------------------------------------
+            # Smart Formula Ranking (historical accuracy-weighted)
+            # --------------------------------------------------
+            st.markdown("### 🧠 Smart Formula Ranking — จัดอันดับด้วยผลย้อนหลัง")
+            st.caption(
+                "คงสูตรเดิมทั้ง 15 สูตรและวิธีผสมวันเดิม "
+                "เพิ่มน้ำหนักตามการทดสอบย้อนหลังแบบเดินหน้า "
+                "และหารน้ำหนักเมื่อหลายสูตรให้ผล 3 หลักซ้ำกัน"
+            )
+
+            smart_outputs, formula_performance, smart_frequency, smart_raw_counts = (
+                analyse_smart_formula_ranking(
+                    target_number,
+                    daily_number,
+                    st.session_state.history,
+                    mode="back3"
+                )
+            )
+
+            st.markdown("#### 🏅 ผล Backtest แยกตามสูตร")
+            st.dataframe(
+                pd.DataFrame(formula_performance),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.markdown("#### 🔢 เปรียบเทียบความถี่เดิมกับ Smart Ranking")
+            smart_df = pd.DataFrame([
+                {
+                    "เลข": digit,
+                    "ความถี่เดิม": smart_raw_counts.get(digit, 0),
+                    "คะแนนถ่วงน้ำหนัก": round(score, 3),
+                    "อันดับ Smart": rank
+                }
+                for rank, (digit, score) in enumerate(smart_frequency, 1)
+            ])
+            st.dataframe(smart_df, use_container_width=True, hide_index=True)
+
+            smart_digits = [digit for digit, _ in smart_frequency]
+            st.markdown(
+                f"""
+                <div class="report-card">
+                    <div class="report-title">🧠 สรุป Smart Ranking</div>
+                    <p><b>เรียงอันดับ:</b>
+                    <span style="color:#0284c7;font-size:22px;font-weight:800;">
+                    {' - '.join(smart_digits)}</span></p>
+                    <p><b>Smart Top 5:</b>
+                    <span style="color:#0369a1;font-size:20px;font-weight:800;">
+                    {' - '.join(smart_digits[:5])}</span></p>
+                    <p><b>Smart Top 3:</b>
+                    <span style="color:#0369a1;font-size:20px;font-weight:800;">
+                    {' - '.join(smart_digits[:3])}</span></p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            st.info(
+                "หมายเหตุ: Backtest ใช้เลขท้าย 3 ตัวของผลสูตรเทียบกับเลขท้าย 3 ตัว "
+                "ที่บันทึกในช่อง back3 ของงวดถัดไป (ถ้าไม่มีข้อมูลจึงใช้ 3 ตัวท้ายรางวัลที่ 1) "
+                "ผลคะแนนเป็นสถิติย้อนหลัง ไม่ใช่การรับประกันผลรางวัล"
             )
 
             # Echo Core / Hybrid Pool are separate history-based modules.
