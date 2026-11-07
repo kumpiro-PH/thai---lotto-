@@ -63,11 +63,10 @@ DAILY_NUMBERS = {
     "Sunday":    "062341",
 }
 
+# ==========================================
+# 3. LOCAL CSV LOADER FUNCTION
+# ==========================================
 def load_history_by_day(day_name):
-    # เปลี่ยนเป็น Raw URL ของ GitHub คุณโดยตรง
-    # (แทนที่ 'kumpiro-PH/thai---lotto' ด้วย Username และ Repository ของคุณจริง)
-    base_url = "https://raw.githubusercontent.com/kumpiro-PH/thai---lotto/main/"
-    
     file_map = {
         "Monday": "thai_lottery_monday_history.csv",
         "Tuesday": "thai_lottery_tuesday_history.csv",
@@ -79,10 +78,9 @@ def load_history_by_day(day_name):
     }
     
     filename = file_map.get(day_name)
-    if filename:
-        url = base_url + filename
+    if filename and os.path.exists(filename):
         try:
-            df = pd.read_csv(url)
+            df = pd.read_csv(filename)
             history_list = []
             for _, row in df.iterrows():
                 history_list.append({
@@ -93,8 +91,10 @@ def load_history_by_day(day_name):
                 })
             return history_list
         except Exception as e:
-            st.error(f"ไม่สามารถโหลดไฟล์ผ่าน URL ได้ ({url}): {e}")
+            st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ {filename}: {e}")
             return []
+    else:
+        st.warning(f"⚠️ ไม่พบไฟล์ {filename} ในโฟลเดอร์โปรเจกต์")
     return []
 
 # ==========================================
@@ -307,12 +307,12 @@ if menu == "8. All-in-One Master Report":
     col1, col2 = st.columns(2)
     with col1:
         day_choice = st.selectbox("📅 เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-        # โหลดประวัติจาก CSV ตามวันที่เลือก
+        # โหลดประวัติจากไฟล์ CSV ในโฟลเดอร์เดียวกัน
         st.session_state.history = load_history_by_day(day_choice)
         daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
     with col2:
-        # อัพเดทเลขฐานอัตโนมัติจากแถวแรกของ CSV ที่ถูกโหลดเข้ามาใหม่
+        # อัพเดทเลขฐานอัตโนมัติจากแถวแรกของ CSV
         default_target = st.session_state.history[0]["first"] if st.session_state.history else "423224"
         target_number = st.text_input("📌 เลขฐาน 6 หลักงวดล่าสุด:", value=default_target, max_chars=6)
 
