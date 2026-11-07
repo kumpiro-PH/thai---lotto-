@@ -365,7 +365,7 @@ if menu == "8. All-in-One Master Report":
 
                 st.markdown(f"""
                     <div style="background-color: #f8fafc; padding: 10px 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-weight: 600; color: #1e293b;">
-                        วัน: {day_choice}   |   เลขฐาน: {target_number}   |   Daily Number: {daily_number}   |   จำนวนสูตร: 15   |   จำนวนหลัก: {frequency_total}
+                        วัน: {day_choice}   |   เลขฐาน: {target_number}   |   Daily Number: {daily_number}   |   จำนวนสูตร: 15   |   จำนวนหลัก: {frequency_total}
                     </div>
                 """, unsafe_allow_html=True)
 
@@ -384,7 +384,7 @@ if menu == "8. All-in-One Master Report":
                             """, unsafe_allow_html=True)
 
                 with cols[6]:
-                    rem_text = "  |  ".join([f"{d} = {frequency_counts.get(d, 0)} ครั้ง" for d in remaining])
+                    rem_text = "   |   ".join([f"{d} = {frequency_counts.get(d, 0)} ครั้ง" for d in remaining])
                     st.markdown(f"""
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 11px; color: #475569; height: 100%; display: flex; align-items: center;">
                             <div><b>เลขที่เหลือ:</b><br>{rem_text}</div>
