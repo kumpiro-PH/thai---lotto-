@@ -44,6 +44,9 @@ if "uploaded_csvs" not in st.session_state:
 if "target_number" not in st.session_state:
     st.session_state.target_number = "423224"
 
+if "current_day" not in st.session_state:
+    st.session_state.current_day = "Monday"
+
 if "ai_settings" not in st.session_state:
     st.session_state.ai_settings = {
         "formula_weight": 1.00,
@@ -92,7 +95,6 @@ def load_history_by_day(day_name):
     history_list = []
     for _, row in df.iterrows():
         raw_first = str(row.get("first_prize", ""))
-        # ป้องกันกรณีตัวเลขหายหรือมีทศนิยม ให้แปลงเป็น int ก่อนเติม 0 ข้างหน้าให้ครบ 6 หลัก
         try:
             first_val = str(int(float(raw_first))).zfill(6)
         except:
@@ -314,26 +316,33 @@ if menu == "8. All-in-One Master Report":
     
     col1, col2 = st.columns(2)
     with col1:
-        day_choice = st.selectbox("📅 เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+        day_choice = st.selectbox(
+            "📅 เลือกวันประจำงวด:", 
+            ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        )
         
         # โหลดประวัติจาก CSV ตามวัน
         loaded_history = load_history_by_day(day_choice)
         st.session_state.history = loaded_history
         daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
-        # 🌟 อัพเดทเลขฐานอัตโนมัติจากงวดล่าสุดใน CSV ทันทีกเปลี่ยนวัน
-        if loaded_history:
-            st.session_state.target_number = loaded_history[0]["first"]
+        # 🌟 ตรวจสอบการเปลี่ยนวัน เพื่อดึงเลขฐานงวดล่าสุดจาก CSV มาอัปเดตอัตโนมัติ
+        if st.session_state.current_day != day_choice:
+            st.session_state.current_day = day_choice
+            if loaded_history:
+                st.session_state.target_number = loaded_history[0]["first"]
 
     with col2:
-        # ผูกเข้ากับ st.session_state.target_number โดยตรงเพื่อให้เปลี่ยนตามวันแบบ Real-time
+        # หากโหลดประวัติมาได้และยังไม่อัปเดต ให้เซ็ตค่าเริ่มต้น
+        if loaded_history and not st.session_state.target_number:
+            st.session_state.target_number = loaded_history[0]["first"]
+
         target_number = st.text_input(
             "📌 เลขฐาน 6 หลักงวดล่าสุด:", 
             value=st.session_state.target_number, 
             max_chars=6,
             key="target_number_input"
         )
-        # ซิงค์ค่ากลับเข้า session_state
         st.session_state.target_number = target_number
 
     if not st.session_state.history:
