@@ -7,7 +7,7 @@ from collections import Counter
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.9 - CSV & Day-of-Week Master",
+    page_title="THAI AI PROFESSIONAL v7.9 - CSV Master",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -27,12 +27,6 @@ st.markdown("""
         padding: 15px;
         margin-bottom: 15px;
     }
-    .report-title {
-        font-weight: 700;
-        color: #0369a1;
-        font-size: 16px;
-        margin-bottom: 10px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -43,6 +37,9 @@ VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - CSV & Day-of-Week"
 # ==========================================
 if "history" not in st.session_state:
     st.session_state.history = []
+
+if "uploaded_csvs" not in st.session_state:
+    st.session_state.uploaded_csvs = {}
 
 if "ai_settings" not in st.session_state:
     st.session_state.ai_settings = {
@@ -64,38 +61,44 @@ DAILY_NUMBERS = {
 }
 
 # ==========================================
-# 3. LOCAL CSV LOADER FUNCTION
+# 3. ROBUST CSV LOADER FUNCTION
 # ==========================================
 def load_history_by_day(day_name):
-    file_map = {
-        "Monday": "thai_lottery_monday_history.csv",
-        "Tuesday": "thai_lottery_tuesday_history.csv",
-        "Wednesday": "thai_lottery_wednesday_history.csv",
-        "Thursday": "thai_lottery_thursday_history.csv",
-        "Friday": "thai_lottery_friday_history.csv",
-        "Saturday": "thai_lottery_saturday_history.csv",
-        "Sunday": "thai_lottery_sunday_history.csv"
-    }
-    
-    filename = file_map.get(day_name)
-    if filename and os.path.exists(filename):
-        try:
-            df = pd.read_csv(filename)
-            history_list = []
-            for _, row in df.iterrows():
-                history_list.append({
-                    "date": str(row.get("date_be", "")),
-                    "day": day_name,
-                    "first": str(row.get("first_prize", "")).zfill(6),
-                    "back2": str(row.get("last_2_digits", "")).zfill(2)
-                })
-            return history_list
-        except Exception as e:
-            st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ {filename}: {e}")
-            return []
+    # 1. เช็คก่อนว่ามีการอัปโหลดไฟล์ผ่านหน้าเว็บเข้ามาไหม
+    if day_name in st.session_state.uploaded_csvs:
+        df = st.session_state.uploaded_csvs[day_name]
     else:
-        st.warning(f"⚠️ ไม่พบไฟล์ {filename} ในโฟลเดอร์โปรเจกต์")
-    return []
+        # 2. ถ้าไม่มี ให้ดึงจากไฟล์ในเครื่อง/GitHub
+        file_map = {
+            "Monday": "thai_lottery_monday_history.csv",
+            "Tuesday": "thai_lottery_tuesday_history.csv",
+            "Wednesday": "thai_lottery_wednesday_history.csv",
+            "Thursday": "thai_lottery_thursday_history.csv",
+            "Friday": "thai_lottery_friday_history.csv",
+            "Saturday": "thai_lottery_saturday_history.csv",
+            "Sunday": "thai_lottery_sunday_history.csv"
+        }
+        
+        filename = file_map.get(day_name)
+        if filename and os.path.exists(filename):
+            try:
+                df = pd.read_csv(filename)
+            except Exception as e:
+                st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ {filename}: {e}")
+                return []
+        else:
+            return []
+
+    # แปลง DataFrame เป็น History List
+    history_list = []
+    for _, row in df.iterrows():
+        history_list.append({
+            "date": str(row.get("date_be", "")),
+            "day": day_name,
+            "first": str(row.get("first_prize", "")).zfill(6),
+            "back2": str(row.get("last_2_digits", "")).zfill(2)
+        })
+    return history_list
 
 # ==========================================
 # 4. HELPER FUNCTIONS & FORMULAS
@@ -130,7 +133,6 @@ def calculate_score(result, answer):
     hit, _ = calculate_digit_accuracy(result, answer)
     return min(hit * 25, 100)
 
-# 15 สูตรคำนวณ + Cross Multiply
 def formula_cross_multiply(number, mode="back2", daily_number="-"):
     target = get_target_digits(number, "first")[-4:]
     d1, d2 = safe_int(target[0]), safe_int(target[1])
@@ -307,119 +309,130 @@ if menu == "8. All-in-One Master Report":
     col1, col2 = st.columns(2)
     with col1:
         day_choice = st.selectbox("📅 เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-        # โหลดประวัติจากไฟล์ CSV ในโฟลเดอร์เดียวกัน
         st.session_state.history = load_history_by_day(day_choice)
         daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
     with col2:
-        # อัพเดทเลขฐานอัตโนมัติจากแถวแรกของ CSV
         default_target = st.session_state.history[0]["first"] if st.session_state.history else "423224"
         target_number = st.text_input("📌 เลขฐาน 6 หลักงวดล่าสุด:", value=default_target, max_chars=6)
 
-    if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
-        if len(target_number) != 6 or not target_number.isdigit():
-            st.error("❌ กรุณากรอกเลขฐาน 6 หลักให้ถูกต้อง")
-        else:
-            frequency_rows, frequency, frequency_total = analyse_all_15_formulas(
-                target_number=target_number,
-                daily_number=daily_number,
-                mode="back2"
-            )
+    if not st.session_state.history:
+        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาอัปโหลดไฟล์ CSV ประจำวันในเมนู 'เพิ่ม/จัดการประวัติหวย'")
+    else:
+        if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
+            if len(target_number) != 6 or not target_number.isdigit():
+                st.error("❌ กรุณากรอกเลขฐาน 6 หลักให้ถูกต้อง")
+            else:
+                frequency_rows, frequency, frequency_total = analyse_all_15_formulas(
+                    target_number=target_number,
+                    daily_number=daily_number,
+                    mode="back2"
+                )
 
-            frequency_counts = dict(frequency)
-            top_digits = [digit for digit, _ in frequency]
-            
-            top_6 = top_digits[:6]
-            remaining = top_digits[6:]
+                frequency_counts = dict(frequency)
+                top_digits = [digit for digit, _ in frequency]
+                top_6 = top_digits[:6]
+                remaining = top_digits[6:]
 
-            # --- Header Bar Summary ---
-            st.markdown(f"""
-                <div style="background-color: #f8fafc; padding: 10px 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-weight: 600; color: #1e293b;">
-                    วัน: {day_choice}   |   เลขฐาน: {target_number}   |   Daily Number: {daily_number}   |   จำนวนสูตร: 15   |   จำนวนหลัก: {frequency_total}
-                </div>
-            """, unsafe_allow_html=True)
-
-            # --- Top 6 Cards Layout ---
-            cols = st.columns([1, 1, 1, 1, 1, 1, 1.2])
-            colors = ["#0284c7", "#0369a1", "#0284c7", "#0369a1", "#0284c7", "#0369a1"]
-            for i in range(6):
-                if i < len(top_6):
-                    d = top_6[i]
-                    cnt = frequency_counts.get(d, 0)
-                    with cols[i]:
-                        st.markdown(f"""
-                            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 12px 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                                <div style="font-size: 24px; font-weight: bold; color: {colors[i]};">{d}</div>
-                                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">{cnt} ครั้ง</div>
-                            </div>
-                        """, unsafe_allow_html=True)
-
-            with cols[6]:
-                rem_text = "  |  ".join([f"{d} = {frequency_counts.get(d, 0)} ครั้ง" for d in remaining])
                 st.markdown(f"""
-                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 11px; color: #475569; height: 100%; display: flex; align-items: center;">
-                        <div><b>เลขที่เหลือ:</b><br>{rem_text}</div>
+                    <div style="background-color: #f8fafc; padding: 10px 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-weight: 600; color: #1e293b;">
+                        วัน: {day_choice}   |   เลขฐาน: {target_number}   |   Daily Number: {daily_number}   |   จำนวนสูตร: 15   |   จำนวนหลัก: {frequency_total}
                     </div>
                 """, unsafe_allow_html=True)
 
-            st.markdown("<br>", unsafe_allow_html=True)
+                cols = st.columns([1, 1, 1, 1, 1, 1, 1.2])
+                colors = ["#0284c7", "#0369a1", "#0284c7", "#0369a1", "#0284c7", "#0369a1"]
+                for i in range(6):
+                    if i < len(top_6):
+                        d = top_6[i]
+                        cnt = frequency_counts.get(d, 0)
+                        with cols[i]:
+                            st.markdown(f"""
+                                <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 12px 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                                    <div style="font-size: 24px; font-weight: bold; color: {colors[i]};">{d}</div>
+                                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">{cnt} ครั้ง</div>
+                                </div>
+                            """, unsafe_allow_html=True)
 
-            # --- Frequency Sets (5, 4, 3, 2 ตัว) ---
-            st.markdown("##### ชุดเลขเด่นจากความถี่รวม 15 สูตร (อิงตามไฟล์ CSV รายวันและเลขประจำวัน)")
-            set_cols = st.columns(4)
-            
-            def get_stat_str(digits_list):
-                return " | ".join([f"{d}:{frequency_counts.get(d, 0)}" for d in digits_list])
+                with cols[6]:
+                    rem_text = "  |  ".join([f"{d} = {frequency_counts.get(d, 0)} ครั้ง" for d in remaining])
+                    st.markdown(f"""
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 11px; color: #475569; height: 100%; display: flex; align-items: center;">
+                            <div><b>เลขที่เหลือ:</b><br>{rem_text}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
 
-            set5 = top_digits[:5]
-            with set_cols[0]:
-                st.markdown(f"""
-                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
-                        <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 5 ตัว</div>
-                        <div style="font-size: 20px; font-weight: bold; color: #15803d; letter-spacing: 3px;">{" ".join(set5)}</div>
-                        <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set5)}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
 
-            set4 = top_digits[:4]
-            with set_cols[1]:
-                st.markdown(f"""
-                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
-                        <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 4 ตัว</div>
-                        <div style="font-size: 20px; font-weight: bold; color: #0369a1; letter-spacing: 3px;">{" ".join(set4)}</div>
-                        <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set4)}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+                st.markdown("##### ชุดเลขเด่นจากความถี่รวม 15 สูตร")
+                set_cols = st.columns(4)
+                
+                def get_stat_str(digits_list):
+                    return " | ".join([f"{d}:{frequency_counts.get(d, 0)}" for d in digits_list])
 
-            set3 = top_digits[:3]
-            with set_cols[2]:
-                st.markdown(f"""
-                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
-                        <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 3 ตัว</div>
-                        <div style="font-size: 20px; font-weight: bold; color: #7e22ce; letter-spacing: 3px;">{" ".join(set3)}</div>
-                        <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set3)}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+                set5 = top_digits[:5]
+                with set_cols[0]:
+                    st.markdown(f"""
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
+                            <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 5 ตัว</div>
+                            <div style="font-size: 20px; font-weight: bold; color: #15803d; letter-spacing: 3px;">{" ".join(set5)}</div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set5)}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
 
-            set2 = top_digits[:2]
-            with set_cols[3]:
-                st.markdown(f"""
-                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
-                        <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 2 ตัว</div>
-                        <div style="font-size: 20px; font-weight: bold; color: #b45309; letter-spacing: 3px;">{" ".join(set2)}</div>
-                        <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set2)}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+                set4 = top_digits[:4]
+                with set_cols[1]:
+                    st.markdown(f"""
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
+                            <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 4 ตัว</div>
+                            <div style="font-size: 20px; font-weight: bold; color: #0369a1; letter-spacing: 3px;">{" ".join(set4)}</div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set4)}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                set3 = top_digits[:3]
+                with set_cols[2]:
+                    st.markdown(f"""
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
+                            <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 3 ตัว</div>
+                            <div style="font-size: 20px; font-weight: bold; color: #7e22ce; letter-spacing: 3px;">{" ".join(set3)}</div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set3)}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                set2 = top_digits[:2]
+                with set_cols[3]:
+                    st.markdown(f"""
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
+                            <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 2 ตัว</div>
+                            <div style="font-size: 20px; font-weight: bold; color: #b45309; letter-spacing: 3px;">{" ".join(set2)}</div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set2)}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
 
 # ==========================================
-# 7. MANAGEMENT HISTORY PAGE
+# 7. MANAGEMENT HISTORY PAGE (มีระบบอัปโหลด CSV สำรอง)
 # ==========================================
 elif menu == "1. เพิ่ม/จัดการประวัติหวย":
-    st.title("📚 เพิ่ม / จัดการประวัติหวย (CSV Viewer)")
-    day_view = st.selectbox("เลือกดูประวัติไฟล์ CSV ประจำวัน:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-    current_history = load_history_by_day(day_view)
-    st.subheader(f"📋 ข้อมูลสถิติจากไฟล์: thai_lottery_{day_view.lower()}_history.csv")
-    st.dataframe(pd.DataFrame(current_history), use_container_width=True)
+    st.title("📚 อัปโหลดและจัดการไฟล์ CSV รายวัน")
+    
+    day_upload = st.selectbox("เลือกวันสำหรับอัปโหลด/ดูประวัติ:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+    
+    uploaded_file = st.file_uploader(f"📂 อัปโหลดไฟล์ CSV สำหรับวัน {day_upload}", type=["csv"])
+    if uploaded_file is not None:
+        try:
+            df_up = pd.read_csv(uploaded_file)
+            st.session_state.uploaded_csvs[day_upload] = df_up
+            st.success(f"✅ อัปโหลดและบันทึกข้อมูลของวัน {day_upload} สำเร็จ!")
+        except Exception as e:
+            st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
+
+    current_history = load_history_by_day(day_upload)
+    if current_history:
+        st.subheader(f"📋 ข้อมูลประวัติปัจจุบันของวัน: {day_upload}")
+        st.dataframe(pd.DataFrame(current_history), use_container_width=True)
+    else:
+        st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload} (ระบบจะพยายามอ่านจากไฟล์ในเครื่องหรือไฟล์บน GitHub หากมีอยู่)")
 
 # ==========================================
 # 8. BACKTEST PAGE
@@ -435,9 +448,9 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
     daily_num_arg = DAILY_NUMBERS.get(selected_backtest_day, "-")
 
     if len(st.session_state.history) < 2:
-        st.warning("⚠️ ข้อมูลในไฟล์ CSV มีไม่เพียงพอสำหรับการทำ Backtest")
+        st.warning(f"⚠️ ข้อมูลประวัติของวัน {selected_backtest_day} มีไม่เพียงพอ (น้อยกว่า 2 งวด) กรุณาอัปโหลดไฟล์ CSV ในเมนู 'เพิ่ม/จัดการประวัติหวย'")
     else:
-        st.info(f"ประมวลผล Backtest จากไฟล์ {selected_backtest_day} (จำนวน {len(st.session_state.history)} งวด)")
+        st.info(f"ประมวลผล Backtest จากวัน {selected_backtest_day} (จำนวน {len(st.session_state.history)} งวด)")
         res_b2 = analyse_formulas_by_day("back2", target_day=selected_backtest_day, daily_number=daily_num_arg)
         st.subheader(f"🏆 Top 3 สูตรเจาะตำแหน่งยอดเยี่ยม ({selected_backtest_day})")
         for rank, item in enumerate(res_b2[:3], 1):
