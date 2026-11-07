@@ -63,10 +63,11 @@ DAILY_NUMBERS = {
     "Sunday":    "062341",
 }
 
-# ==========================================
-# 3. CSV LOADER FUNCTION (เชื่อมต่อไฟล์ CSV บน GitHub)
-# ==========================================
 def load_history_by_day(day_name):
+    # เปลี่ยนเป็น Raw URL ของ GitHub คุณโดยตรง
+    # (แทนที่ 'kumpiro-PH/thai---lotto' ด้วย Username และ Repository ของคุณจริง)
+    base_url = "https://raw.githubusercontent.com/kumpiro-PH/thai---lotto/main/"
+    
     file_map = {
         "Monday": "thai_lottery_monday_history.csv",
         "Tuesday": "thai_lottery_tuesday_history.csv",
@@ -78,9 +79,10 @@ def load_history_by_day(day_name):
     }
     
     filename = file_map.get(day_name)
-    if filename and os.path.exists(filename):
+    if filename:
+        url = base_url + filename
         try:
-            df = pd.read_csv(filename)
+            df = pd.read_csv(url)
             history_list = []
             for _, row in df.iterrows():
                 history_list.append({
@@ -91,7 +93,7 @@ def load_history_by_day(day_name):
                 })
             return history_list
         except Exception as e:
-            st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ {filename}: {e}")
+            st.error(f"ไม่สามารถโหลดไฟล์ผ่าน URL ได้ ({url}): {e}")
             return []
     return []
 
