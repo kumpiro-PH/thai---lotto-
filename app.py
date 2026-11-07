@@ -30,7 +30,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Auto CSV Sync"
+VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Auto Target Sync"
 
 # ==========================================
 # 2. SESSION STATE & DAILY NUMBERS INITIALIZATION
@@ -61,7 +61,7 @@ DAILY_NUMBERS = {
 }
 
 # ==========================================
-# 3. CSV LOADER FUNCTION (สลับให้งวดล่าสุดขึ้นมาอยู่แถวแรกสุด)
+# 3. CSV LOADER FUNCTION (จัดเรียงให้งวดล่าสุดขึ้นบนสุด)
 # ==========================================
 def load_history_by_day(day_name):
     if day_name in st.session_state.uploaded_csvs:
@@ -86,7 +86,7 @@ def load_history_by_day(day_name):
         else:
             return []
 
-    # 🌟 พลิกตารางให้งวดล่าสุด (วันที่ใหม่ที่สุด) อยู่แถวแรกสุดเสมอ
+    # 🌟 กลับลำดับให้งวดล่าสุด (วันที่ใหม่ที่สุด) อยู่แถวแรกเสมอ
     if not df.empty:
         df = df.iloc[::-1].reset_index(drop=True)
 
@@ -315,7 +315,7 @@ if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
     st.caption(f"เวอร์ชัน: {VERSION}")
     
-    # ฟังก์ชัน Callback เมื่อเปลี่ยนวันใน Selectbox จะทำการดึงงวดล่าสุดจาก CSV มาใส่ช่อง input ทันที
+    # 🌟 ฟังก์ชันอัปเดตเลขฐานอัตโนมัติทันทีที่เปลี่ยนวันใน Selectbox
     def on_day_change():
         selected_day = st.session_state.selected_day_box
         history_data = load_history_by_day(selected_day)
@@ -335,6 +335,7 @@ if menu == "8. All-in-One Master Report":
         daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
     with col2:
+        # ดึงเลขงวดล่าสุดจากแถวแรกของ CSV ประจำวันนั้นๆ มาแสดงเป็นค่าตั้งต้น
         initial_target = st.session_state.history[0]["first"] if st.session_state.history else "423224"
         
         target_number = st.text_input(
@@ -449,7 +450,7 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         with st.form("add_form"):
             col_f1, col_f2 = st.columns(2)
             with col_f1:
-                new_date = st.text_input("งวดวันที่ (เช่น 16/11/2569)", value="16/11/2569")
+                new_date = st.text_input("งวดวันที่ (เช่น 01/11/2569)", value="01/11/2569")
                 new_first = st.text_input("รางวัลที่ 1 (6 หลัก)", max_chars=6, value="")
                 new_back2 = st.text_input("เลขท้าย 2 ตัว", max_chars=2, value="")
             with col_f2:
