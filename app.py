@@ -308,7 +308,7 @@ menu = st.sidebar.radio("เลือกหน้าเมนู:", [
 ])
 
 # ==========================================
-# 6. ALL-IN-ONE MASTER REPORT PAGE
+# 6.หวยรัฐบาลไทย by TOMMY 
 # ==========================================
 if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
