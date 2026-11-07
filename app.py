@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+import os
 from collections import Counter
-from itertools import combinations
 
 # ==========================================
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.9 - Day-OfWeek Master",
+    page_title="THAI AI PROFESSIONAL v7.9 - CSV & Day-of-Week Master",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -34,22 +33,13 @@ st.markdown("""
         font-size: 16px;
         margin-bottom: 10px;
     }
-    .badge-core {
-        background-color: #0284c7;
-        color: white;
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-weight: 700;
-        display: inline-block;
-        margin: 2px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Day-of-Week & 15 Formulas"
+VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - CSV & Day-of-Week"
 
 # ==========================================
-# 2. DEFAULT HISTORY DATA & INITIALIZATION
+# 2. SESSION STATE & DAILY NUMBERS INITIALIZATION
 # ==========================================
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -64,12 +54,49 @@ if "ai_settings" not in st.session_state:
     }
 
 DAILY_NUMBERS = {
-    "Monday": "462793", "Tuesday": "639170", "Wednesday": "257308",
-    "Thursday": "176904", "Friday": "730259", "Saturday": "895260", "Sunday": "062341",
+    "Monday": "6185270", 
+    "Tuesday": "7306481", 
+    "Wednesday": "6845902",
+    "Thursday": "5078136", 
+    "Friday": "9627401", 
+    "Saturday": "8413657", 
+    "Sunday": "2956814",
 }
 
 # ==========================================
-# 3. HELPER FUNCTIONS & FORMULAS
+# 3. CSV LOADER FUNCTION (เชื่อมต่อไฟล์ CSV บน GitHub)
+# ==========================================
+def load_history_by_day(day_name):
+    file_map = {
+        "Monday": "thai_lottery_monday_history.csv",
+        "Tuesday": "thai_lottery_tuesday_history.csv",
+        "Wednesday": "thai_lottery_wednesday_history.csv",
+        "Thursday": "thai_lottery_thursday_history.csv",
+        "Friday": "thai_lottery_friday_history.csv",
+        "Saturday": "thai_lottery_saturday_history.csv",
+        "Sunday": "thai_lottery_sunday_history.csv"
+    }
+    
+    filename = file_map.get(day_name)
+    if filename and os.path.exists(filename):
+        try:
+            df = pd.read_csv(filename)
+            history_list = []
+            for _, row in df.iterrows():
+                history_list.append({
+                    "date": str(row.get("date_be", "")),
+                    "day": day_name,
+                    "first": str(row.get("first_prize", "")).zfill(6),
+                    "back2": str(row.get("last_2_digits", "")).zfill(2)
+                })
+            return history_list
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ {filename}: {e}")
+            return []
+    return []
+
+# ==========================================
+# 4. HELPER FUNCTIONS & FORMULAS
 # ==========================================
 def safe_int(value, default=0):
     try: return int(value)
@@ -101,7 +128,7 @@ def calculate_score(result, answer):
     hit, _ = calculate_digit_accuracy(result, answer)
     return min(hit * 25, 100)
 
-# สูตรคำนวณทั้งหมด (15 สูตร + Cross Multiply)
+# 15 สูตรคำนวณ + Cross Multiply
 def formula_cross_multiply(number, mode="back2", daily_number="-"):
     target = get_target_digits(number, "first")[-4:]
     d1, d2 = safe_int(target[0]), safe_int(target[1])
@@ -186,7 +213,6 @@ formulas = [
     ("Formula 13", formula13), ("Formula 14", formula14), ("Formula Neighbor", formula_neighbor),
     ("Cross Multiply", formula_cross_multiply)
 ]
-FORMULA_MAP = dict(formulas)
 
 def dynamic_formula_wrapper(func, target, mode, daily_number="-"):
     target = safe_digits(target).zfill(6)[-6:]
@@ -234,18 +260,9 @@ def analyse_all_15_formulas(target_number, daily_number="-", mode="back2"):
     frequency = sorted(counts.items(), key=lambda item: (-item[1], int(item[0])))
     return rows, frequency, len(combined_digits)
 
-# ฟังก์ชัน Backtest แบบกรองตามวันในสัปดาห์ (Day-of-Week Filtered Backtest)
 def analyse_formulas_by_day(mode="back2", target_day=None, daily_number="-"):
     results = []
-    
-    # กรองประวัติเฉพาะวันในสัปดาห์ที่เลือก (ถ้ามีระบุวัน และไม่ใช่โหมดไม่ใช้)
-    if target_day and target_day != "ไม่ใช้ (Manual)":
-        filtered_history = [h for h in st.session_state.history if h.get("day") == target_day]
-        # หากประวัติในวันนั้นมีน้อยเกินไป ให้ fallback ใช้ประวัติทั้งหมด
-        target_history = filtered_history if len(filtered_history) >= 2 else st.session_state.history
-    else:
-        target_history = st.session_state.history
-
+    target_history = st.session_state.history
     f_weight = st.session_state.ai_settings.get("formula_weight", 1.0)
     c_weight = st.session_state.ai_settings.get("cross_weight", 0.9)
 
@@ -268,7 +285,7 @@ def analyse_formulas_by_day(mode="back2", target_day=None, daily_number="-"):
     return sorted(results, key=lambda x: (-x[0], -x[1], -x[2]))
 
 # ==========================================
-# 4. STREAMLIT UI SIDEBAR NAVIGATION
+# 5. STREAMLIT UI SIDEBAR NAVIGATION
 # ==========================================
 st.sidebar.title("🧠 MENU CONTROL")
 menu = st.sidebar.radio("เลือกหน้าเมนู:", [
@@ -279,7 +296,7 @@ menu = st.sidebar.radio("เลือกหน้าเมนู:", [
 ])
 
 # ==========================================
-# 5. ALL-IN-ONE MASTER REPORT (UI ตามตัวอย่างรูปภาพ + รองรับระบบวัน)
+# 6. ALL-IN-ONE MASTER REPORT PAGE
 # ==========================================
 if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
@@ -287,17 +304,19 @@ if menu == "8. All-in-One Master Report":
     
     col1, col2 = st.columns(2)
     with col1:
-        default_target = st.session_state.history[-1]["first"] if st.session_state.history else "423224"
-        target_number = st.text_input("📌 เลขฐาน 6 หลักงวดล่าสุด:", value=default_target, max_chars=6)
+        day_choice = st.selectbox("📅 เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+        # โหลดประวัติจาก CSV ตามวันที่เลือกอัตโนมัติ
+        st.session_state.history = load_history_by_day(day_choice)
+        daily_number = DAILY_NUMBERS.get(day_choice, "3506429")
+
     with col2:
-        day_choice = st.selectbox("📅 เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "ไม่ใช้ (Manual)"])
-        daily_number = DAILY_NUMBERS.get(day_choice, "3506429") if day_choice != "ไม่ใช้ (Manual)" else "-"
+        default_target = st.session_state.history[0]["first"] if st.session_state.history else "423224"
+        target_number = st.text_input("📌 เลขฐาน 6 หลักงวดล่าสุด:", value=default_target, max_chars=6)
 
     if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
         if len(target_number) != 6 or not target_number.isdigit():
             st.error("❌ กรุณากรอกเลขฐาน 6 หลักให้ถูกต้อง")
         else:
-            # คำนวณความถี่ 15 สูตร โดยผสาน Daily Number และ Day Context
             frequency_rows, frequency, frequency_total = analyse_all_15_formulas(
                 target_number=target_number,
                 daily_number=daily_number,
@@ -310,16 +329,15 @@ if menu == "8. All-in-One Master Report":
             top_6 = top_digits[:6]
             remaining = top_digits[6:]
 
-            # --- 1. Header Bar Summary ---
+            # --- Header Bar Summary ---
             st.markdown(f"""
                 <div style="background-color: #f8fafc; padding: 10px 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-weight: 600; color: #1e293b;">
                     วัน: {day_choice}   |   เลขฐาน: {target_number}   |   Daily Number: {daily_number}   |   จำนวนสูตร: 15   |   จำนวนหลัก: {frequency_total}
                 </div>
             """, unsafe_allow_html=True)
 
-            # --- 2. Top 6 Cards Layout + Remaining ---
+            # --- Top 6 Cards Layout ---
             cols = st.columns([1, 1, 1, 1, 1, 1, 1.2])
-            
             colors = ["#0284c7", "#0369a1", "#0284c7", "#0369a1", "#0284c7", "#0369a1"]
             for i in range(6):
                 if i < len(top_6):
@@ -343,15 +361,13 @@ if menu == "8. All-in-One Master Report":
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # --- 3. Frequency-based Sets (ชุด 5 ตัว, 4 ตัว, 3 ตัว, 2 ตัว) ---
-            st.markdown("##### ชุดเลขเด่นจากความถี่รวม 15 สูตร (อิงตามสถิติวันและเลขประจำวัน)")
-            
+            # --- Frequency Sets (5, 4, 3, 2 ตัว) ---
+            st.markdown("##### ชุดเลขเด่นจากความถี่รวม 15 สูตร (อิงตามไฟล์ CSV รายวันและเลขประจำวัน)")
             set_cols = st.columns(4)
             
             def get_stat_str(digits_list):
                 return " | ".join([f"{d}:{frequency_counts.get(d, 0)}" for d in digits_list])
 
-            # ชุด 5 ตัว
             set5 = top_digits[:5]
             with set_cols[0]:
                 st.markdown(f"""
@@ -362,7 +378,6 @@ if menu == "8. All-in-One Master Report":
                     </div>
                 """, unsafe_allow_html=True)
 
-            # ชุด 4 ตัว
             set4 = top_digits[:4]
             with set_cols[1]:
                 st.markdown(f"""
@@ -373,7 +388,6 @@ if menu == "8. All-in-One Master Report":
                     </div>
                 """, unsafe_allow_html=True)
 
-            # ชุด 3 ตัว
             set3 = top_digits[:3]
             with set_cols[2]:
                 st.markdown(f"""
@@ -384,7 +398,6 @@ if menu == "8. All-in-One Master Report":
                     </div>
                 """, unsafe_allow_html=True)
 
-            # ชุด 2 ตัว
             set2 = top_digits[:2]
             with set_cols[3]:
                 st.markdown(f"""
@@ -396,63 +409,42 @@ if menu == "8. All-in-One Master Report":
                 """, unsafe_allow_html=True)
 
 # ==========================================
-# 6. MANAGEMENT HISTORY PAGE
+# 7. MANAGEMENT HISTORY PAGE
 # ==========================================
 elif menu == "1. เพิ่ม/จัดการประวัติหวย":
-    st.title("📚 เพิ่ม / จัดการประวัติหวย")
-    
-    with st.form("add_history_form"):
-        st.subheader("➕ เพิ่มรางวัลงวดใหม่")
-        col_a, col_b, col_c = st.columns(3)
-        date_in = col_a.text_input("งวดวันที่ (เช่น 16 พ.ย. 2569)")
-        day_in = col_b.selectbox("วันในสัปดาห์", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-        first_in = col_c.text_input("รางวัลที่ 1 (6 หลัก)")
-        
-        b2_in = st.text_input("ท้าย 2 ตัว (2 หลัก)")
-        
-        submitted = st.form_submit_button("บันทึกข้อมูล")
-        if submitted:
-            if len(first_in) == 6 and first_in.isdigit():
-                st.session_state.history.append({
-                    "date": date_in, "day": day_in, "first": first_in, "back2": b2_in
-                })
-                st.success("✅ บันทึกข้อมูลสำเร็จ!")
-            else:
-                st.error("❌ รางวัลที่ 1 ต้องเป็นตัวเลข 6 หลักเท่านั้น")
-
-    st.subheader("📋 ประวัติสลากย้อนหลังในระบบ")
-    st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True)
+    st.title("📚 เพิ่ม / จัดการประวัติหวย (CSV Viewer)")
+    day_view = st.selectbox("เลือกดูประวัติไฟล์ CSV ประจำวัน:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+    current_history = load_history_by_day(day_view)
+    st.subheader(f"📋 ข้อมูลสถิติจากไฟล์: thai_lottery_{day_view.lower()}_history.csv")
+    st.dataframe(pd.DataFrame(current_history), use_container_width=True)
 
 # ==========================================
-# 7. BACKTEST PAGE (รองรับการคัดกรองตามวัน)
+# 8. BACKTEST PAGE
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
     st.title("📈 รันระบบทดสอบย้อนหลัง (Backtest Engine)")
-    
     selected_backtest_day = st.selectbox(
-        "📅 เลือกกรองสถิติตามวันในสัปดาห์สำหรับการทำ Backtest:", 
-        ["ทั้งหมด (All Days)", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        "📅 เลือกวันสำหรับการทำ Backtest:", 
+        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     )
     
-    day_filter_arg = None if selected_backtest_day == "ทั้งหมด (All Days)" else selected_backtest_day
-    daily_num_arg = DAILY_NUMBERS.get(day_filter_arg, "-") if day_filter_arg else "-"
+    st.session_state.history = load_history_by_day(selected_backtest_day)
+    daily_num_arg = DAILY_NUMBERS.get(selected_backtest_day, "-")
 
     if len(st.session_state.history) < 2:
-        st.warning("⚠️ ต้องการข้อมูลอย่างน้อย 2 งวดขึ้นไปในการทำ Backtest")
+        st.warning("⚠️ ข้อมูลในไฟล์ CSV มีไม่เพียงพอสำหรับการทำ Backtest")
     else:
-        st.info(f"ประมวลผลระบบ Backtest (เงื่อนไขวัน: {selected_backtest_day})")
-        
-        res_b2 = analyse_formulas_by_day("back2", target_day=day_filter_arg, daily_number=daily_num_arg)
+        st.info(f"ประมวลผล Backtest จากไฟล์ {selected_backtest_day} (จำนวน {len(st.session_state.history)} งวด)")
+        res_b2 = analyse_formulas_by_day("back2", target_day=selected_backtest_day, daily_number=daily_num_arg)
         st.subheader(f"🏆 Top 3 สูตรเจาะตำแหน่งยอดเยี่ยม ({selected_backtest_day})")
         for rank, item in enumerate(res_b2[:3], 1):
             st.write(f"**อันดับ {rank}: {item[3]}** | คะแนนคูณน้ำหนัก: {item[0]:.2f} | ความแม่นยำรวม: {item[2]:.2f}%")
 
 # ==========================================
-# 8. SETTINGS PAGE
+# 9. SETTINGS PAGE
 # ==========================================
 elif menu == "9. ตั้งค่าน้ำหนัก AI (Settings)":
     st.title("⚙️ ตั้งค่าน้ำหนัก AI (Weight Settings)")
-    
     w_f = st.slider("Formula Weight", 0.1, 2.0, st.session_state.ai_settings["formula_weight"])
     w_c = st.slider("Cross Weight", 0.1, 2.0, st.session_state.ai_settings["cross_weight"])
     
