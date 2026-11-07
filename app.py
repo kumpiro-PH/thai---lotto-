@@ -498,14 +498,13 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
     else:
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
-
 # ==========================================
-# 10. BACKTEST PAGE (ฉบับแก้ไข TypeError สมบูรณ์)
+# 10. BACKTEST PAGE (ฉบับสมบูรณ์: มีเลขท้าย 2 ตัว + คะแนนสถิติ)
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
 
     st.title("📈 ระบบทดสอบย้อนหลัง (Backtest Engine)")
-    st.caption("วิเคราะห์คะแนนและความแม่นยำแยกรายสูตร พร้อมจัดอันดับผลการทดสอบ")
+    st.caption("วิเคราะห์คะแนนและความแม่นยำแยกรายสูตร พร้อมแสดงเลขท้าย 2 ตัวงวดล่าสุด")
 
     backtest_day = st.selectbox(
         "📅 เลือกวันสำหรับรัน Backtest:",
@@ -523,15 +522,32 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
         if len(history) < 2:
             st.warning(f"ข้อมูล {backtest_day} ไม่เพียงพอ ต้องมีอย่างน้อย 2 งวด")
         else:
-            # 2. เรียกฟังก์ชันวิเคราะห์ Backtest หลัก
+            # 2. เรียกฟังก์ชันวิเคราะห์ Backtest (คะแนนและความแม่นยำ)
             results = analyse_formulas_by_day(
                 mode="back2",
                 target_day=backtest_day,
                 daily_number=daily_number
             )
 
-            # 3. แปลงผลลัพธ์เป็น DataFrame ให้ตรงกับโครงสร้างที่ฟังก์ชันคืนค่ามา
-            # (โดยปกติ results จะคืนค่ามาเป็น [Weighted Score, Raw Score, Accuracy (%), Formula])
+            # 3. ดึงผลลัพธ์เลขท้าย 2 ตัวงวดล่าสุดของแต่ละสูตร (จากฟังก์ชันเดียวกับหน้า Master Report)
+            # *หมายเหตุ: หากฟังก์ชันในระบบของคุณชื่ออื่น ให้เปลี่ยนชื่อฟังก์ชันตรงนี้ให้ตรงกัน
+            try:
+                formula_back2_data = analyse_all_15_formulas(backtest_day, daily_number)
+            except Exception:
+                try:
+                    formula_back2_data = analyse_all_15_formulas()
+                except Exception:
+                    formula_back2_data = []
+
+            # สร้าง Dict จับคู่ชื่อสูตรกับเลขท้าย 2 ตัว (Back2)
+            back2_dict = {}
+            for row in formula_back2_data:
+                # โครงสร้างตัวอย่าง: [สูตร, เลขดิบ, เลขผสม, ท้าย 2 ตัว]
+                formula_name = row[0]
+                back2_value = row[3]
+                back2_dict[formula_name] = back2_value
+
+            # 4. แปลงผลลัพธ์ Backtest เป็น DataFrame หลัก
             df_bt_detail = pd.DataFrame(
                 results,
                 columns=[
@@ -542,9 +558,13 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                 ]
             )
 
-            # จัดเรียงลำดับคอลัมน์ให้ "สูตร (Formula)" มาอยู่ซ้ายสุด
+            # นำเลขท้าย 2 ตัวจาก dict มาใส่เป็นคอลัมน์ใหม่
+            df_bt_detail["ท้าย 2 ตัว (Back2)"] = df_bt_detail["สูตร (Formula)"].map(back2_dict).fillna("-")
+
+            # จัดเรียงลำดับคอลัมน์ให้ "สูตร" และ "เลขท้าย 2 ตัว" อยู่ด้านหน้า
             df_bt_detail = df_bt_detail[[
                 "สูตร (Formula)",
+                "ท้าย 2 ตัว (Back2)",
                 "คะแนนน้ำหนัก (Weighted Score)",
                 "คะแนนดิบ (Raw Score)",
                 "ความแม่นยำ (%) (Accuracy)"
@@ -561,27 +581,27 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                 ascending=False
             ).reset_index(drop=True)
 
-            st.success("✅ ประมวลผล Backtest เรียบร้อย!")
+            st.success("✅ ประมวลผล Backtest พร้อมดึงเลขท้าย 2 ตัวเรียบร้อย!")
             st.info(f"วันทดสอบ: {backtest_day} | จำนวนข้อมูล: {len(history)} งวด | Daily Number: {daily_number}")
 
-            # 4. แสดงตารางรายละเอียดรายสูตร
-            st.subheader("📊 ตารางแสดงผลลัพธ์รายละเอียดรายสูตร (Backtest Details)")
+            # 5. แสดงตารางรายละเอียดรายสูตรพร้อมเลขท้าย 2 ตัว
+            st.subheader("📊 ตารางแสดงผลลัพธ์รายสูตรและเลขท้าย 2 ตัว (Backtest Details)")
             with st.expander("🔍 คลิกเพื่อดูตารางรายละเอียดทุกสูตร", expanded=True):
                 st.dataframe(df_bt_detail, use_container_width=True, hide_index=True)
 
             st.markdown("---")
 
-            # 5. สรุปผล TOP 3 อันดับสูตรแม่นยำสูงสุด
+            # 6. สรุปผล TOP 3 อันดับสูตรแม่นยำสูงสุด พร้อมโชว์เลขท้าย 2 ตัว
             st.subheader("🏆 TOP 3 FORMULA RANKING")
             for idx, item in df_bt_detail.head(3).iterrows():
                 st.markdown(
                     f"- **อันดับ {idx + 1}: {item['สูตร (Formula)']}** | "
+                    f"เลขท้าย 2 ตัว: **{item['ท้าย 2 ตัว (Back2)']}** 🏆 | "
                     f"คะแนนน้ำหนัก: {item['คะแนนน้ำหนัก (Weighted Score)']:.2f} | "
-                    f"คะแนนดิบ: {item['คะแนนดิบ (Raw Score)']:.2f} | "
                     f"ความแม่นยำ: {item['ความแม่นยำ (%) (Accuracy)']:.2f}%"
                 )
 
-            # 6. กราฟเปรียบเทียบความแม่นยำ
+            # 7. กราฟเปรียบเทียบความแม่นยำ
             st.markdown("---")
             st.subheader("📈 เปรียบเทียบความแม่นยำแต่ละสูตร")
             chart_data = df_bt_detail.set_index("สูตร (Formula)")[["ความแม่นยำ (%) (Accuracy)"]]
