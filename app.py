@@ -7,7 +7,7 @@ from collections import Counter
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.9 - Global Latest CSV Target",
+    page_title="THAI AI PROFESSIONAL v7.9 - CSV Status Monitor",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -30,7 +30,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Global CSV Sync"
+VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - CSV Status Monitor"
 
 # ==========================================
 # 2. SESSION STATE & DAILY NUMBERS INITIALIZATION
@@ -61,12 +61,15 @@ DAILY_NUMBERS = {
 }
 
 # ==========================================
-# 3. CSV LOADER FUNCTION (สลับแถวให้งวดล่าสุดขึ้นบนสุดเสมอ)
+# 3. CSV LOADER WITH SOURCE STATUS
 # ==========================================
 def load_history_by_day(day_name):
+    # 1. ตรวจสอบว่ามีไฟล์อัปโหลดสำรองผ่านหน้าเว็บหรือไม่
     if day_name in st.session_state.uploaded_csvs:
         df = st.session_state.uploaded_csvs[day_name]
+        st.sidebar.success(f"📂 [{day_name}] ดึงจาก: ไฟล์อัปโหลดสำรอง (Web Upload)")
     else:
+        # 2. ดึงจากไฟล์ในโฟลเดอร์โปรเจกต์ / GitHub
         file_map = {
             "Monday": "thai_lottery_monday_history.csv",
             "Tuesday": "thai_lottery_tuesday_history.csv",
@@ -80,15 +83,13 @@ def load_history_by_day(day_name):
         if filename and os.path.exists(filename):
             try:
                 df = pd.read_csv(filename)
+                st.sidebar.info(f"🌐 [{day_name}] ดึงจาก: ไฟล์ใน GitHub / โฟลเดอร์ระบบ (`{filename}`)")
             except Exception as e:
                 st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ {filename}: {e}")
                 return []
         else:
+            st.sidebar.warning(f"⚠️ [{day_name}] ไม่พบไฟล์ใน GitHub หรือโฟลเดอร์ระบบ")
             return []
-
-    # 🌟 พลิกตารางให้งวดล่าสุด (วันที่ใหม่ที่สุด) อยู่แถวแรกสุดเสมอ
-    if not df.empty:
-        df = df.iloc[::-1].reset_index(drop=True)
 
     history_list = []
     for _, row in df.iterrows():
@@ -315,7 +316,6 @@ if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
     st.caption(f"เวอร์ชัน: {VERSION}")
     
-    # 🌟 Callback เมื่อเปลี่ยนวันใน Selectbox ให้ดึงงวดล่าสุดของวันนั้นมาอัปเดตช่อง input อัตโนมัติทันที
     def on_day_change():
         selected_day = st.session_state.selected_day_box
         history_data = load_history_by_day(selected_day)
@@ -335,7 +335,6 @@ if menu == "8. All-in-One Master Report":
         daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
     with col2:
-        # กำหนดเลขฐานตั้งต้นจากงวดล่าสุดของวันนั้นๆ ใน CSV
         initial_target = st.session_state.history[0]["first"] if st.session_state.history else "423224"
         
         target_number = st.text_input(
@@ -346,7 +345,7 @@ if menu == "8. All-in-One Master Report":
         )
 
     if not st.session_state.history:
-        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV หรือเพิ่มข้อมูลในเมนู 'เพิ่ม/จัดการประวัติหวย'")
+        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV ใน GitHub หรืออัปโหลดผ่านเมนู 'เพิ่ม/จัดการประวัติหวย'")
     else:
         if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
             if len(target_number) != 6 or not target_number.isdigit():
@@ -440,67 +439,18 @@ if menu == "8. All-in-One Master Report":
                     """, unsafe_allow_html=True)
 
 # ==========================================
-# 7. MANAGEMENT HISTORY & ADD DATA PAGE
+# 7. MANAGEMENT HISTORY PAGE
 # ==========================================
 elif menu == "1. เพิ่ม/จัดการประวัติหวย":
-    st.title("📚 เพิ่ม / จัดการประวัติและอัปเดตข้อมูลหวย")
-    day_upload = st.selectbox("เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+    st.title("📚 อัปโหลดและจัดการไฟล์ CSV รายวัน")
+    day_upload = st.selectbox("เลือกวันสำหรับอัปโหลด/ดูประวัติ:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
     
-    with st.expander("➕ เพิ่มข้อมูลงวดใหม่ (Add New Draw)", expanded=True):
-        with st.form("add_form"):
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                new_date = st.text_input("งวดวันที่ (เช่น 01/11/2569)", value="01/11/2569")
-                new_first = st.text_input("รางวัลที่ 1 (6 หลัก)", max_chars=6, value="")
-                new_back2 = st.text_input("เลขท้าย 2 ตัว", max_chars=2, value="")
-            with col_f2:
-                new_f3_1 = st.text_input("เลขหน้า 3 ตัว (1)", max_chars=3, value="")
-                new_f3_2 = st.text_input("เลขหน้า 3 ตัว (2)", max_chars=3, value="")
-                new_l3_1 = st.text_input("เลขท้าย 3 ตัว (1)", max_chars=3, value="")
-                new_l3_2 = st.text_input("เลขท้าย 3 ตัว (2)", max_chars=3, value="")
-            
-            submitted = st.form_submit_button("💾 บันทึกข้อมูลงวดใหม่", type="primary")
-            if submitted:
-                if len(new_first) != 6 or not new_first.isdigit():
-                    st.error("❌ กรุณากรอกรางวัลที่ 1 เป็นตัวเลข 6 หลักให้ถูกต้อง")
-                else:
-                    if day_upload in st.session_state.uploaded_csvs:
-                        df_current = st.session_state.uploaded_csvs[day_upload]
-                    else:
-                        file_map_inner = {
-                            "Monday": "thai_lottery_monday_history.csv", "Tuesday": "thai_lottery_tuesday_history.csv",
-                            "Wednesday": "thai_lottery_wednesday_history.csv", "Thursday": "thai_lottery_thursday_history.csv",
-                            "Friday": "thai_lottery_friday_history.csv", "Saturday": "thai_lottery_saturday_history.csv",
-                            "Sunday": "thai_lottery_sunday_history.csv"
-                        }
-                        f_name = file_map_inner.get(day_upload)
-                        if f_name and os.path.exists(f_name):
-                            df_current = pd.read_csv(f_name)
-                        else:
-                            df_current = pd.DataFrame(columns=['date_be', 'first_prize', 'last_2_digits', 'front_3_1', 'front_3_2', 'last_3_1', 'last_3_2'])
-
-                    new_row = pd.DataFrame([{
-                        'date_be': new_date,
-                        'first_prize': new_first,
-                        'last_2_digits': new_back2,
-                        'front_3_1': new_f3_1,
-                        'front_3_2': new_f3_2,
-                        'last_3_1': new_l3_1,
-                        'last_3_2': new_l3_2
-                    }])
-                    
-                    df_updated = pd.concat([new_row, df_current], ignore_index=True)
-                    st.session_state.uploaded_csvs[day_upload] = df_updated
-                    st.success(f"✅ บันทึกข้อมูลงวด {new_date} ของวัน {day_upload} เรียบร้อยแล้ว!")
-
-    st.markdown("---")
-    
-    uploaded_file = st.file_uploader(f"📂 หรืออัปโหลดไฟล์ CSV ทั้งชุดสำหรับวัน {day_upload}", type=["csv"])
+    uploaded_file = st.file_uploader(f"📂 อัปโหลดไฟล์ CSV สำหรับวัน {day_upload}", type=["csv"])
     if uploaded_file is not None:
         try:
             df_up = pd.read_csv(uploaded_file)
             st.session_state.uploaded_csvs[day_upload] = df_up
-            st.success(f"✅ อัปโหลดไฟล์ CSV ของวัน {day_upload} สำเร็จ!")
+            st.success(f"✅ อัปโหลดและบันทึกข้อมูลของวัน {day_upload} สำเร็จ!")
         except Exception as e:
             st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
 
@@ -509,7 +459,7 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         st.subheader(f"📋 ข้อมูลประวัติปัจจุบันของวัน: {day_upload}")
         st.dataframe(pd.DataFrame(current_history), use_container_width=True)
     else:
-        st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
+        st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload} ในโฟลเดอร์โปรเจกต์")
 
 # ==========================================
 # 8. BACKTEST PAGE
@@ -537,7 +487,7 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
 # 9. SETTINGS PAGE
 # ==========================================
 elif menu == "9. ตั้งค่าน้ำหนัก AI (Settings)":
-    st.title("⚙️ ตั้งค่าน้ำหนัก AI (Weight Settings)")
+    st.title("⚙️ ตั้งค่าน้ำหนัก AI (Weight Settlements)")
     w_f = st.slider("Formula Weight", 0.1, 2.0, st.session_state.ai_settings["formula_weight"])
     w_c = st.slider("Cross Weight", 0.1, 2.0, st.session_state.ai_settings["cross_weight"])
     
