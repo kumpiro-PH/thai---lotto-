@@ -7,7 +7,7 @@ from collections import Counter
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.9 - Auto CSV Master",
+    page_title="THAI AI PROFESSIONAL v7.9 - Global Latest CSV Target",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -30,7 +30,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Auto Target Sync"
+VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Global CSV Sync"
 
 # ==========================================
 # 2. SESSION STATE & DAILY NUMBERS INITIALIZATION
@@ -61,7 +61,7 @@ DAILY_NUMBERS = {
 }
 
 # ==========================================
-# 3. CSV LOADER FUNCTION (จัดเรียงให้งวดล่าสุดขึ้นบนสุด)
+# 3. CSV LOADER FUNCTION (สลับแถวให้งวดล่าสุดขึ้นบนสุดเสมอ)
 # ==========================================
 def load_history_by_day(day_name):
     if day_name in st.session_state.uploaded_csvs:
@@ -86,7 +86,7 @@ def load_history_by_day(day_name):
         else:
             return []
 
-    # 🌟 กลับลำดับให้งวดล่าสุด (วันที่ใหม่ที่สุด) อยู่แถวแรกเสมอ
+    # 🌟 พลิกตารางให้งวดล่าสุด (วันที่ใหม่ที่สุด) อยู่แถวแรกสุดเสมอ
     if not df.empty:
         df = df.iloc[::-1].reset_index(drop=True)
 
@@ -315,7 +315,7 @@ if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
     st.caption(f"เวอร์ชัน: {VERSION}")
     
-    # 🌟 ฟังก์ชันอัปเดตเลขฐานอัตโนมัติทันทีที่เปลี่ยนวันใน Selectbox
+    # 🌟 Callback เมื่อเปลี่ยนวันใน Selectbox ให้ดึงงวดล่าสุดของวันนั้นมาอัปเดตช่อง input อัตโนมัติทันที
     def on_day_change():
         selected_day = st.session_state.selected_day_box
         history_data = load_history_by_day(selected_day)
@@ -335,7 +335,7 @@ if menu == "8. All-in-One Master Report":
         daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
     with col2:
-        # ดึงเลขงวดล่าสุดจากแถวแรกของ CSV ประจำวันนั้นๆ มาแสดงเป็นค่าตั้งต้น
+        # กำหนดเลขฐานตั้งต้นจากงวดล่าสุดของวันนั้นๆ ใน CSV
         initial_target = st.session_state.history[0]["first"] if st.session_state.history else "423224"
         
         target_number = st.text_input(
