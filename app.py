@@ -500,7 +500,7 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
 
 
 # ==========================================
-# 10. BACKTEST PAGE (ฉบับแสดงตารางรายละเอียดรายสูตร)
+# 10. BACKTEST PAGE (ฉบับจัดเรียงคอลัมน์ถูกต้อง)
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
 
@@ -523,34 +523,68 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
         if len(history) < 2:
             st.warning(f"ข้อมูล {backtest_day} ไม่เพียงพอ ต้องมีอย่างน้อย 2 งวด")
         else:
-            # 2. เรียกฟังก์ชันวิเคราะห์ Backtest ตามระบบของคุณ
-            # (ปรับรับค่าผลลัพธ์รายสูตรที่มาพร้อมข้อมูลตารางรายละเอียด)
+            # 2. เรียกฟังก์ชันวิเคราะห์ Backtest จากระบบเดิม
             results = analyse_formulas_by_day(
                 mode="back2",
                 target_day=backtest_day,
                 daily_number=daily_number
             )
 
+            # 3. แปลงผลลัพธ์เป็น DataFrame ให้ตรงกับข้อมูลที่ส่งมาจริง
+            df_bt_detail = pd.DataFrame(
+                results,
+                columns=[
+                    "คะแนนน้ำหนัก (Weighted Score)",
+                    "คะแนนดิบ (Raw Score)",
+                    "ความแม่นยำ (%) (Accuracy)",
+                    "สูตร (Formula)"
+                ]
+            )
+
+            # สลับให้ "สูตร (Formula)" มาอยู่คอลัมน์แรกซ้ายสุด
+            df_bt_detail = df_bt_detail[[
+                "สูตร (Formula)",
+                "คะแนนน้ำหนัก (Weighted Score)",
+                "คะแนนดิบ (Raw Score)",
+                "ความแม่นยำ (%) (Accuracy)"
+            ]]
+
+            # ปัดเศษทศนิยมให้ดูง่ายขึ้น
+            df_bt_detail["คะแนนน้ำหนัก (Weighted Score)"] = df_bt_detail["คะแนนน้ำหนัก (Weighted Score)"].round(2)
+            df_bt_detail["คะแนนดิบ (Raw Score)"] = df_bt_detail["คะแนนดิบ (Raw Score)"].round(2)
+            df_bt_detail["ความแม่นยำ (%) (Accuracy)"] = df_bt_detail["ความแม่นยำ (%) (Accuracy)"].round(2)
+
+            # เรียงอันดับตามคะแนนน้ำหนักจากมากไปน้อย
+            df_bt_detail = df_bt_detail.sort_values(
+                by=["คะแนนน้ำหนัก (Weighted Score)", "คะแนนดิบ (Raw Score)"],
+                ascending=False
+            ).reset_index(drop=True)
+
             st.success("✅ ประมวลผล Backtest เรียบร้อย!")
             st.info(f"วันทดสอบ: {backtest_day} | จำนวนข้อมูล: {len(history)} งวด | Daily Number: {daily_number}")
 
-            # 3. ส่วนแสดงตารางรายละเอียดรายสูตร (แบบตารางเจาะจงที่คุณต้องการ)
+            # 4. แสดงตารางรายละเอียดรายสูตร
             st.subheader("📊 ตารางแสดงผลลัพธ์รายละเอียดรายสูตร (Backtest Details)")
-            
-            # แปลงผลลัพธ์เป็น DataFrame (ปรับชื่อคอลัมน์ให้ตรงตามรูปแบบที่ต้องการ)
-            df_bt_detail = pd.DataFrame(
-                results,
-                columns=["สูตร (Formula)", "เลขดิบ (Raw)", "เลขผสมวัน (Blended)", "ท้าย 2 ตัว (Back2)"]
-            )
-
             with st.expander("🔍 คลิกเพื่อดูตารางรายละเอียดทุกสูตร", expanded=True):
                 st.dataframe(df_bt_detail, use_container_width=True, hide_index=True)
 
-            # 4. ส่วนจัดอันดับ Top 3 และกราฟสรุป
             st.markdown("---")
+
+            # 5. สรุปผล TOP 3 อันดับสูตรแม่นยำสูงสุด
             st.subheader("🏆 TOP 3 FORMULA RANKING")
-            
-            # (สามารถแสดงการจัดอันดับสูตรยอดเยี่ยมเพิ่มเติมตรงนี้ต่อได้เลยครับ)
+            for idx, item in df_bt_detail.head(3).iterrows():
+                st.markdown(
+                    f"- **อันดับ {idx + 1}: {item['สูตร (Formula)']}** | "
+                    f"คะแนนน้ำหนัก: {item['คะแนนน้ำหนัก (Weighted Score)']:.2f} | "
+                    f"คะแนนดิบ: {item['คะแนนดิบ (Raw Score)']:.2f} | "
+                    f"ความแม่นยำ: {item['ความแม่นยำ (%) (Accuracy)']:.2f}%"
+                )
+
+            # 6. กราฟเปรียบเทียบความแม่นยำ
+            st.markdown("---")
+            st.subheader("📈 เปรียบเทียบความแม่นยำแต่ละสูตร")
+            chart_data = df_bt_detail.set_index("สูตร (Formula)")[["ความแม่นยำ (%) (Accuracy)"]]
+            st.bar_chart(chart_data)
 
 # ==========================================
 # 9. SETTINGS PAGE
