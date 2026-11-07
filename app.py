@@ -499,7 +499,7 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
 # ==========================================
-# 10. BACKTEST PAGE (ฉบับป้องกัน TypeError และดึงค่า Back2 อย่างปลอดภัย)
+# 10. BACKTEST PAGE (ฉบับแก้ไขดึงเลขท้าย 2 ตัวให้แสดงผลครบถ้วน)
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
 
@@ -529,17 +529,20 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                 daily_number=daily_number
             )
 
-            # 3. ดึงผลลัพธ์เลขท้าย 2 ตัวงวดล่าสุดอย่างปลอดภัย
+            # 3. ดึงผลลัพธ์เลขท้าย 2 ตัวงวดล่าสุดของแต่ละสูตร (ใช้ฟังก์ชันเดียวกับหน้า Master Report แบบส่งค่าตำแหน่ง)
             back2_dict = {}
             try:
-                formula_back2_data = analyse_all_15_formulas()
+                # ลองเรียกแบบส่งพารามิเตอร์เรียงตามตำแหน่ง (ปรับชื่อฟังก์ชันให้ตรงกับที่ใช้ใน Master Report ของคุณ)
+                formula_back2_data = analyse_all_15_formulas(backtest_day, daily_number)
                 if formula_back2_data:
                     for row in formula_back2_data:
                         if isinstance(row, (list, tuple)) and len(row) >= 4:
+                            # row[0] = ชื่อสูตร, row[3] = เลขท้าย 2 ตัว (Back2)
                             back2_dict[row[0]] = row[3]
             except Exception:
                 try:
-                    formula_back2_data = analyse_all_15_formulas(backtest_day, daily_number)
+                    # เผื่อฟังก์ชันใช้พารามิเตอร์เดี่ยว
+                    formula_back2_data = analyse_all_15_formulas(backtest_day)
                     if formula_back2_data:
                         for row in formula_back2_data:
                             if isinstance(row, (list, tuple)) and len(row) >= 4:
@@ -558,10 +561,10 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                 ]
             )
 
-            # นำเลขท้าย 2 ตัวจาก dict มาใส่เป็นคอลัมน์ใหม่ (ถ้าไม่มีให้แสดง "-")
+            # นำเลขท้าย 2 ตัวจาก dict มาใส่เป็นคอลัมน์ใหม่
             df_bt_detail["ท้าย 2 ตัว (Back2)"] = df_bt_detail["สูตร (Formula)"].map(back2_dict).fillna("-")
 
-            # จัดเรียงลำดับคอลัมน์ให้ "สูตร" และ "เลขท้าย 2 ตัว" อยู่ด้านหน้า
+            # จัดเรียงลำดับคอลัมน์ให้ "สูตร" และ "เลขท้าย 2 ตัว" อยู่ด้านหน้าสุด
             df_bt_detail = df_bt_detail[[
                 "สูตร (Formula)",
                 "ท้าย 2 ตัว (Back2)",
