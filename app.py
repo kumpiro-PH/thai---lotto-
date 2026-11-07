@@ -499,136 +499,89 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
 
-# ==========================================
-# 8. BACKTEST PAGE - FORMULA DETAIL ENGINE
-# ==========================================
-elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
+def run_backtest_analysis(day_name, history, daily_number):
+    """
+    Walk-forward backtest.
+    Input history may be newest-first; loader normalizes it oldest-first.
+    Each previous draw's first prize predicts the next draw's 2-digit result.
+    """
+    if len(history) < 2:
+        return pd.DataFrame(), pd.DataFrame(), 0
 
-    st.title("📈 ระบบทดสอบย้อนหลัง (Backtest Engine)")
-    st.caption(
-        "วิเคราะห์คะแนนและความแม่นยำแยกรายสูตร "
-        "พร้อมจัดอันดับผลการทดสอบ"
-    )
+    rows = []
+    test_rows = []
+    for name, func in formulas:
+        weight = (
+            st.session_state.ai_settings.get("cross_weight", 0.90)
+            if name == "Cross Multiply"
+            else st.session_state.ai_settings.get("formula_weight", 1.00)
+        )
 
-    backtest_day = st.selectbox(
-        "📅 เลือกวันสำหรับรัน Backtest:",
-        [
-            "Monday", "Tuesday", "Wednesday",
-            "Thursday", "Friday", "Saturday", "Sunday"
-        ],
-        key="bt_day"
-    )
+        exact_count = 0
+        position_hits = 0
+        any_digit_hits = 0
+        valid = 0
 
-    if st.button(
-        "🚀 รันผล Backtest ทั้งหมด",
-        type="primary",
-        use_container_width=True
-    ):
-
-        # 1. โหลดประวัติของวันที่เลือก
-        history = load_history_by_day(backtest_day)
-        st.session_state.history = history
-
-        daily_number = DAILY_NUMBERS.get(backtest_day, "-")
-
-        if len(history) < 2:
-            st.warning(
-                f"ข้อมูล {backtest_day} ไม่เพียงพอ "
-                "ต้องมีอย่างน้อย 2 งวด"
+        for i in range(1, len(history)):
+            base_draw = history[i - 1]
+            target_draw = history[i]
+            base_number = base_draw["first"]
+            actual = safe_digits(target_draw["back2"]).zfill(2)[-2:]
+            prediction = dynamic_formula_wrapper(
+                func, base_number, "back2", daily_number
             )
 
-        else:
-            # 2. ประมวลผลสูตรทั้งหมดจากฟังก์ชันเดิม
-            results = analyse_formulas_by_day(
-                mode="back2",
-                target_day=backtest_day,
-                daily_number=daily_number
-            )
+            pos_hit = sum(prediction[j] == actual[j] for j in range(2))
+            any_hit, _ = calculate_digit_accuracy(prediction, actual)
+            exact = prediction == actual
 
-            # 3. แปลงผลลัพธ์เป็น DataFrame
-            df_bt_detail = pd.DataFrame(
-                results,
-                columns=[
-                    "Weighted Score",
-                    "Raw Score",
-                    "Accuracy (%)",
-                    "Formula"
-                ]
-            )
+            valid += 1
+            exact_count += int(exact)
+            position_hits += pos_hit
+            any_digit_hits += any_hit
 
-            df_bt_detail["Weighted Score"] = (
-                df_bt_detail["Weighted Score"].round(2)
-            )
+            test_rows.append({
+                "Formula": name,
+                "Base Date": base_draw["date"],
+                "Target Date": target_draw["date"],
+                "Base First Prize": base_number,
+                "Prediction": prediction,
+                "Actual Back2": actual,
+                "Exact Match": "Yes" if exact else "No",
+                "Correct Positions": pos_hit,
+                "Any Digit Hits": any_hit,
+            })
 
-            df_bt_detail["Accuracy (%)"] = (
-                df_bt_detail["Accuracy (%)"].round(2)
-            )
+        exact_rate = (exact_count / valid * 100) if valid else 0.0
+        position_rate = (position_hits / (valid * 2) * 100) if valid else 0.0
+        any_rate = (any_digit_hits / (valid * 2) * 100) if valid else 0.0
+        raw_score = position_hits * 50
+        weighted_score = raw_score * weight
 
-            # 4. เรียงอันดับตามคะแนนจริง
-            df_bt_detail = df_bt_detail.sort_values(
-                by=["Weighted Score", "Raw Score"],
-                ascending=False
-            ).reset_index(drop=True)
+        rows.append({
+            "Formula": name,
+            "Tests": valid,
+            "Exact Hits": exact_count,
+            "Exact Match (%)": round(exact_rate, 2),
+            "Correct Positions": position_hits,
+            "Position Accuracy (%)": round(position_rate, 2),
+            "Any Digit Hits": any_digit_hits,
+            "Any Digit Rate (%)": round(any_rate, 2),
+            "Raw Score": round(raw_score, 2),
+            "Weight": weight,
+            "Weighted Score": round(weighted_score, 2),
+        })
 
-            df_bt_detail.insert(
-                0,
-                "Rank",
-                range(1, len(df_bt_detail) + 1)
-            )
+    summary = pd.DataFrame(rows)
+    if not summary.empty:
+        summary = summary.sort_values(
+            by=["Exact Match (%)", "Position Accuracy (%)", "Weighted Score"],
+            ascending=False
+        ).reset_index(drop=True)
+        summary.insert(0, "Rank", range(1, len(summary) + 1))
 
-            st.success("ประมวลผล Backtest เรียบร้อย!")
-
-            st.info(
-                f"วันทดสอบ: {backtest_day} | "
-                f"จำนวนข้อมูล: {len(history)} งวด | "
-                f"Daily Number: {daily_number}"
-            )
-
-            # 5. Top 3 จากผลคำนวณจริง
-            st.subheader("🏆 TOP 3 FORMULA RANKING")
-
-            for _, item in df_bt_detail.head(3).iterrows():
-
-                st.markdown(
-                    f"""
-                    **อันดับ {int(item['Rank'])}: {item['Formula']}**
-
-                    คะแนนคูณน้ำหนัก: {item['Weighted Score']:.2f}
-
-                    คะแนนดิบ: {item['Raw Score']:.2f}
-
-                    ความแม่นยำรวม: {item['Accuracy (%)']:.2f}%
-                    """
-                )
-
-            st.divider()
-
-            # 6. ตารางรายละเอียดครบทุกสูตร
-            st.subheader(
-                "📊 FORMULA PERFORMANCE DETAIL"
-            )
-
-            st.dataframe(
-                df_bt_detail,
-                use_container_width=True,
-                hide_index=True
-            )
-
-            # 7. กราฟเปรียบเทียบ
-            st.subheader("📈 เปรียบเทียบความแม่นยำแต่ละสูตร")
-
-            chart_data = df_bt_detail.set_index(
-                "Formula"
-            )[["Accuracy (%)"]]
-
-            st.bar_chart(chart_data)
-
-            st.caption(
-                "หมายเหตุ: ผลคะแนนและความแม่นยำอ้างอิง "
-                "วิธีคำนวณใน analyse_formulas_by_day() "
-                "ของระบบเดิม"
-            )
-
+    details = pd.DataFrame(test_rows)
+    return summary, details, len(history) - 1
 
 # ==========================================
 # 9. SETTINGS PAGE
