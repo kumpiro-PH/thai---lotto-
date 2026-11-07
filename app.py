@@ -61,12 +61,11 @@ DAILY_NUMBERS = {
 }
 
 # ==========================================
-# 3. CSV LOADER FUNCTION (พร้อมระบบเช็คสถานะ)
+# 3. CSV LOADER FUNCTION (สลับให้งวดล่าสุดขึ้นมาอยู่แถวแรกสุด)
 # ==========================================
 def load_history_by_day(day_name):
     if day_name in st.session_state.uploaded_csvs:
         df = st.session_state.uploaded_csvs[day_name]
-        st.sidebar.success(f"📂 [{day_name}] ดึงจาก: ข้อมูลอัปเดตบนเว็บ")
     else:
         file_map = {
             "Monday": "thai_lottery_monday_history.csv",
@@ -81,13 +80,15 @@ def load_history_by_day(day_name):
         if filename and os.path.exists(filename):
             try:
                 df = pd.read_csv(filename)
-                st.sidebar.info(f"🌐 [{day_name}] ดึงจาก: ไฟล์ CSV ประจำวัน")
             except Exception as e:
                 st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ {filename}: {e}")
                 return []
         else:
-            st.sidebar.warning(f"⚠️ [{day_name}] ไม่พบไฟล์ CSV ประจำวัน")
             return []
+
+    # 🌟 พลิกตารางให้งวดล่าสุด (วันที่ใหม่ที่สุด) อยู่แถวแรกสุดเสมอ
+    if not df.empty:
+        df = df.iloc[::-1].reset_index(drop=True)
 
     history_list = []
     for _, row in df.iterrows():
