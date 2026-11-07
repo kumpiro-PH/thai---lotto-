@@ -500,38 +500,130 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
 
 
 # ==========================================
-# BACKTEST PAGE (ฉบับเพิ่มตารางเจาะจงรายสูตร)
+# 10. BACKTEST PAGE - FORMULA DETAIL ENGINE
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
+
     st.title("📈 ระบบทดสอบย้อนหลัง (Backtest Engine)")
-    st.caption("ทดสอบและจัดอันดับความแม่นยำของสูตรทั้งหมดเทียบกับประวัติย้อนหลัง")
-    
-    # [ส่วนเลือกวันและตั้งค่าน้ำหนักตามโค้ดเดิมของคุณ]
-    backtest_day = st.selectbox("เลือกวันสำหรับรัน Backtest:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], key="bt_day")
-    
-    if st.button("🚀 รันผล Backtest ทั้งหมด", type="primary"):
-        # รันการคำนวณ Backtest (สมมติได้ตัวแปรผลลัพธ์เป็น list หรือ dataframe ของแต่ละสูตร)
-        backtest_results = run_backtest_analysis(backtest_day) # ฟังก์ชันคำนวณเดิมของคุณ
-        
-        st.success("✅ ประมวลผล Backtest สำเร็จ!")
-        
-        # --- แสดงอันดับยอดเยี่ยม (Top 3 ตามที่คุณยกตัวอย่าง) ---
-        st.markdown("### 🏆 ผลการจัดอันดับสูตรยอดเยี่ยม")
-        st.markdown("""
-        - **อันดับ 1: Formula 3** | คะแนนคูณน้ำหนัก: 7,375.00 | ความแม่นยำรวม: 14.66%
-        - **อันดับ 2: Formula 9** | คะแนนคูณน้ำหนัก: 4,350.00 | ความแม่นยำรวม: 9.48%
-        - **อันดับ 3: Formula 7** | คะแนนคูณน้ำหนัก: 4,325.00 | ความแม่นยำรวม: 12.07%
-        """)
-        
-        st.markdown("---")
-        
-        # --- 🌟 ส่วนเพิ่มใหม่: ตารางรายละเอียดเจาะจงรายสูตรใน Backtest ---
-        with st.expander("📊 ดูตารางคะแนนและความแม่นยำละเอียดทุกสูตร", expanded=True):
-            st.info("ตารางด้านล่างนี้แสดงคะแนนดิบ คะแนนน้ำหนัก และเปอร์เซ็นต์ความแม่นยำย้อนหลังของแต่ละสูตร (เช่น Formula 3, 7, 9)")
-            
-            # แปลงผลลัพธ์เป็น DataFrame แล้วแสดงผลตาราง
-            df_bt_detail = pd.DataFrame(backtest_results)
-            st.dataframe(df_bt_detail, use_container_width=True)
+    st.caption(
+        "วิเคราะห์คะแนนและความแม่นยำแยกรายสูตร "
+        "พร้อมจัดอันดับผลการทดสอบ"
+    )
+
+    backtest_day = st.selectbox(
+        "📅 เลือกวันสำหรับรัน Backtest:",
+        [
+            "Monday", "Tuesday", "Wednesday",
+            "Thursday", "Friday", "Saturday", "Sunday"
+        ],
+        key="bt_day"
+    )
+
+    if st.button(
+        "🚀 รันผล Backtest ทั้งหมด",
+        type="primary",
+        use_container_width=True
+    ):
+
+        # 1. โหลดประวัติของวันที่เลือก
+        history = load_history_by_day(backtest_day)
+        st.session_state.history = history
+
+        daily_number = DAILY_NUMBERS.get(backtest_day, "-")
+
+        if len(history) < 2:
+            st.warning(
+                f"ข้อมูล {backtest_day} ไม่เพียงพอ "
+                "ต้องมีอย่างน้อย 2 งวด"
+            )
+
+        else:
+            # 2. แก้ไขมาใช้ฟังก์ชันจริงที่มีอยู่ในระบบของคุณ: analyse_formulas_by_day
+            results = analyse_formulas_by_day(
+                mode="back2",
+                target_day=backtest_day,
+                daily_number=daily_number
+            )
+
+            # 3. แปลงผลลัพธ์เป็น DataFrame
+            df_bt_detail = pd.DataFrame(
+                results,
+                columns=[
+                    "Weighted Score",
+                    "Raw Score",
+                    "Accuracy (%)",
+                    "Formula"
+                ]
+            )
+
+            df_bt_detail["Weighted Score"] = (
+                df_bt_detail["Weighted Score"].round(2)
+            )
+
+            df_bt_detail["Accuracy (%)"] = (
+                df_bt_detail["Accuracy (%)"].round(2)
+            )
+
+            # 4. เรียงอันดับตามคะแนนจริง
+            df_bt_detail = df_bt_detail.sort_values(
+                by=["Weighted Score", "Raw Score"],
+                ascending=False
+            ).reset_index(drop=True)
+
+            df_bt_detail.insert(
+                0,
+                "Rank",
+                range(1, len(df_bt_detail) + 1)
+            )
+
+            st.success("ประมวลผล Backtest เรียบร้อย!")
+
+            st.info(
+                f"วันทดสอบ: {backtest_day} | "
+                f"จำนวนข้อมูล: {len(history)} งวด | "
+                f"Daily Number: {daily_number}"
+            )
+
+            # 5. Top 3 จากผลคำนวณจริง
+            st.subheader("🏆 TOP 3 FORMULA RANKING")
+
+            for _, item in df_bt_detail.head(3).iterrows():
+                st.markdown(
+                    f"""
+                    - **อันดับ {int(item['Rank'])}: {item['Formula']}**
+                      - คะแนนคูณน้ำหนัก: {item['Weighted Score']:.2f}
+                      - คะแนนดิบ: {item['Raw Score']:.2f}
+                      - ความแม่นยำรวม: {item['Accuracy (%)']:.2f}%
+                    """
+                )
+
+            st.divider()
+
+            # 6. ตารางรายละเอียดครบทุกสูตร
+            st.subheader(
+                "📊 FORMULA PERFORMANCE DETAIL"
+            )
+
+            st.dataframe(
+                df_bt_detail,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # 7. กราฟเปรียบเทียบ
+            st.subheader("📈 เปรียบเทียบความแม่นยำแต่ละสูตร")
+
+            chart_data = df_bt_detail.set_index(
+                "Formula"
+            )[["Accuracy (%)"]]
+
+            st.bar_chart(chart_data)
+
+            st.caption(
+                "หมายเหตุ: ผลคะแนนและความแม่นยำอ้างอิง "
+                "วิธีคำนวณใน analyse_formulas_by_day() "
+                "ของระบบเดิม"
+            )
 
 # ==========================================
 # 9. SETTINGS PAGE
