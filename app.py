@@ -30,7 +30,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Auto-Target CSV"
+VERSION = "หวยรัฐบาลไทย by TOMMY "
 
 # ==========================================
 # 2. SESSION STATE & DAILY NUMBERS INITIALIZATION
