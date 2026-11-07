@@ -311,7 +311,7 @@ menu = st.sidebar.radio("เลือกหน้าเมนู:", [
 # 6. ALL-IN-ONE MASTER REPORT 
 # ==========================================
 if menu == "8. All-in-One Master Report":
-    st.title("🏆 รายงานสรุปผลวิเคราะหวยรัฐบาลไทยจากสถิติ by TOMMY ")
+    st.title("🏆 รายงานสรุปผลวิเคราะหวยรัฐบาลไทยจากสถิติ ")
     st.caption(f"เวอร์ชัน: {VERSION}")
     
     col1, col2 = st.columns(2)
