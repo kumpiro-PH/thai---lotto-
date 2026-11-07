@@ -348,16 +348,24 @@ def run_backtest_analysis(day_name, history_list, daily_number):
     df_det = pd.DataFrame(details_data)
     return df_sum, df_det, valid_tests
 
-def build_formula_back2_rows(base_number, daily_number):
+def build_formula_back2_rows(base_number, daily_number, actual_back2=None):
     prediction_rows = []
-    for name, func in formulas:
+    for idx, (name, func) in enumerate(formulas, start=1):
         raw_res = dynamic_formula_wrapper(func, base_number, "back2", "-")
         blend_res = dynamic_formula_wrapper(func, base_number, "back2", daily_number)
+        back2_val = blend_res[-2:]
+        
+        # ตรวจสอบผลเทียบกับเลขจริงที่ป้อนเข้ามา
+        if actual_back2 and back2_val == str(actual_back2).zfill(2):
+            back2_display = f"{back2_val} 🏆 (ตัวอย่างสูตรที่ {idx} เข้าเป้า)"
+        else:
+            back2_display = back2_val
+
         prediction_rows.append({
             "Formula": name,
             "Raw": raw_res,
             "Blended": blend_res,
-            "Back2": blend_res[-2:]
+            "Back2": back2_display
         })
     return pd.DataFrame(prediction_rows)
 
