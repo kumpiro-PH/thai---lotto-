@@ -54,13 +54,13 @@ if "ai_settings" not in st.session_state:
     }
 
 DAILY_NUMBERS = {
-    "Monday": "6185270", 
-    "Tuesday": "7306481", 
-    "Wednesday": "6845902",
-    "Thursday": "5078136", 
-    "Friday": "9627401", 
-    "Saturday": "8413657", 
-    "Sunday": "2956814",
+    "Monday":    "462793",
+    "Tuesday":   "639170",
+    "Wednesday": "257308",
+    "Thursday":  "176904",
+    "Friday":    "730259",
+    "Saturday":  "895260",
+    "Sunday":    "062341",
 }
 
 # ==========================================
@@ -305,11 +305,12 @@ if menu == "8. All-in-One Master Report":
     col1, col2 = st.columns(2)
     with col1:
         day_choice = st.selectbox("📅 เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-        # โหลดประวัติจาก CSV ตามวันที่เลือกอัตโนมัติ
+        # โหลดประวัติจาก CSV ตามวันที่เลือก
         st.session_state.history = load_history_by_day(day_choice)
-        daily_number = DAILY_NUMBERS.get(day_choice, "3506429")
+        daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
     with col2:
+        # อัพเดทเลขฐานอัตโนมัติจากแถวแรกของ CSV ที่ถูกโหลดเข้ามาใหม่
         default_target = st.session_state.history[0]["first"] if st.session_state.history else "423224"
         target_number = st.text_input("📌 เลขฐาน 6 หลักงวดล่าสุด:", value=default_target, max_chars=6)
 
