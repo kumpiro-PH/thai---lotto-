@@ -294,7 +294,7 @@ menu = st.sidebar.radio("เลือกหน้าเมนู:", [
 ])
 
 # ==========================================
-# 5. ALL-IN-ONE MASTER REPORT (MAIN PAGE)
+# 5. ALL-IN-ONE MASTER REPORT (UI ตามตัวอย่างรูปภาพ)
 # ==========================================
 if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
@@ -302,122 +302,113 @@ if menu == "8. All-in-One Master Report":
     
     col1, col2 = st.columns(2)
     with col1:
-        default_target = st.session_state.history[-1]["first"] if st.session_state.history else "011781"
+        default_target = st.session_state.history[-1]["first"] if st.session_state.history else "423224"
         target_number = st.text_input("📌 เลขฐาน 6 หลักงวดล่าสุด:", value=default_target, max_chars=6)
     with col2:
         day_choice = st.selectbox("📅 เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "ไม่ใช้ (Manual)"])
-        daily_number = DAILY_NUMBERS.get(day_choice, "-")
+        daily_number = DAILY_NUMBERS.get(day_choice, "3506429")
 
     if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
         if len(target_number) != 6 or not target_number.isdigit():
             st.error("❌ กรุณากรอกเลขฐาน 6 หลักให้ถูกต้อง")
         else:
-            # การคำนวณแบบผสมวัน vs ดิบ
-            f1_res = dynamic_formula_wrapper(FORMULA_MAP["Formula 1"], target_number, "back2", daily_number)
-            f1_raw = dynamic_formula_wrapper(FORMULA_MAP["Formula 1"], target_number, "back2", "-")
-            f2_res = dynamic_formula_wrapper(FORMULA_MAP["Formula 2"], target_number, "back2", daily_number)
-            f2_raw = dynamic_formula_wrapper(FORMULA_MAP["Formula 2"], target_number, "back2", "-")
-            cross_res = dynamic_formula_wrapper(FORMULA_MAP["Cross Multiply"], target_number, "back2", daily_number)
-            cross_raw = dynamic_formula_wrapper(FORMULA_MAP["Cross Multiply"], target_number, "back2", "-")
-
-            st.markdown("### 📊 เปรียบเทียบผลลัพธ์สูตรเด่น (สถิติดิบ vs ผสมวัน)")
-            comp_data = [
-                {"สูตร": "Formula 1 (ผันแปร)", "สถิติดิบ": f1_raw, "ผสมวัน": f1_res, "เด่น 2 ตัว": f1_res[-2:]},
-                {"สูตร": "Formula 2 (คูณคู่)", "สถิติดิบ": f2_raw, "ผสมวัน": f2_res, "เด่น 2 ตัว": f2_res[-2:]},
-                {"สูตร": "Cross Multiply (คูณไขว้)", "สถิติดิบ": cross_raw, "ผสมวัน": cross_res, "เด่น 2 ตัว": cross_res[-2:]},
-            ]
-            st.table(pd.DataFrame(comp_data))
-
-            # ความถี่เลขเด่นรวม 15 สูตร (Back2)
-            st.markdown("### 🧮 ความถี่เลขเด่นรวม 15 สูตร (ท้าย 2 ตัว)")
-            st.caption(
-                "ใช้ Formula 1–14 และ Formula Neighbor เท่านั้น "
-                "ไม่รวม Cross Multiply / Echo Core / Hybrid Pool "
-                "นับผลท้าย 2 ตัวหลังผสม Daily Number รวม 30 หลัก"
-            )
-
+            # คำนวณความถี่ 15 สูตร
             frequency_rows, frequency, frequency_total = analyse_all_15_formulas(
                 target_number=target_number,
                 daily_number=daily_number,
                 mode="back2"
             )
 
-            st.markdown("#### 📋 ตรวจสอบผลลัพธ์รายสูตร")
-            st.dataframe(
-                pd.DataFrame(frequency_rows),
-                use_container_width=True,
-                hide_index=True
-            )
-
-            st.markdown("#### 📊 ตารางความถี่เลข 0–9")
-            frequency_df = pd.DataFrame(
-                [{"เลข": digit, "จำนวนครั้ง": count} for digit, count in frequency]
-            )
-            st.bar_chart(
-                frequency_df.set_index("เลข"),
-                y="จำนวนครั้ง",
-                use_container_width=True
-            )
-            st.dataframe(frequency_df, use_container_width=True, hide_index=True)
-
-            # เรียงเลขเด่นจากความถี่มากไปน้อย (กรณีเท่ากัน เรียงเลขน้อยไปมาก)
-            top_digits = [digit for digit, _ in frequency]
             frequency_counts = dict(frequency)
+            top_digits = [digit for digit, _ in frequency]
+            
+            top_6 = top_digits[:6]
+            remaining = top_digits[6:]
 
-            # แสดงจำนวนครั้งกำกับเลขเด่นทุกอันดับ เพื่อให้ตรวจสอบย้อนกลับได้
-            metric1, metric2, metric3 = st.columns(3)
-            metric1.metric(
-                "🥇 เลขเด่นอันดับ 1",
-                top_digits[0],
-                f"{frequency_counts[top_digits[0]]} ครั้ง"
-            )
-
-            top3_text = " - ".join(top_digits[:3])
-            top3_counts = " | ".join(
-                f"{digit}: {frequency_counts[digit]} ครั้ง"
-                for digit in top_digits[:3]
-            )
-            metric2.metric("🏆 เลขเด่น 3 ตัว", top3_text)
-            metric2.caption(top3_counts)
-
-            top5_text = " - ".join(top_digits[:5])
-            top5_counts = " | ".join(
-                f"{digit}: {frequency_counts[digit]} ครั้ง"
-                for digit in top_digits[:5]
-            )
-            metric3.metric("⭐ เลขเด่น 5 ตัว", top5_text)
-            metric3.caption(top5_counts)
-
-            if frequency_total != 30:
-                st.warning(
-                    f"นับได้ {frequency_total} หลัก แต่ควรได้ 30 หลัก "
-                    "กรุณาตรวจสอบผลลัพธ์ของทั้ง 15 สูตร"
-                )
-
-            st.markdown("### 📚 ระบบสถิติย้อนหลัง")
-            echo_core = get_echo_core(st.session_state.history)
-            top_5_digits = " - ".join(echo_core[:5])
-            super_core = sorted(list(set(echo_core) & set(list(target_number[:3]))))
-            pairs = [f"{a}{b}" for a, b in combinations(echo_core, 2)]
-            combined_6_pool = list(dict.fromkeys(list(target_number) + echo_core))
-            top_6_digits = " - ".join(combined_6_pool[:6]) if len(combined_6_pool) >= 6 else "0 - 1 - 2 - 4 - 6 - 7"
-
+            # --- 1. Header Bar Summary ---
             st.markdown(f"""
-            <div class="report-card">
-                <div class="report-title">🎯 ชุดเลขเด่น 5–6 ตัวเน้นๆ (แนะนำสำหรับการลงทุน)</div>
-                <p><b>⭐ ชุดเลขเด่น 5 ตัว (Echo Core):</b> <span style="color: #0284c7; font-size: 18px; font-weight: bold;">{top_5_digits}</span></p>
-                <p><b>🌟 ชุดเลขเด่น 6 ตัว (Hybrid Pool):</b> <span style="color: #0369a1; font-size: 18px; font-weight: bold;">{top_6_digits}</span></p>
-            </div>
+                <div style="background-color: #f8fafc; padding: 10px 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-weight: 600; color: #1e293b;">
+                    เลขฐาน: {target_number} &nbsp;&nbsp;|&nbsp;&nbsp; Daily Number: {daily_number} &nbsp;&nbsp;|&nbsp;&nbsp; จำนวนสูตร: 15 &nbsp;&nbsp;|&nbsp;&nbsp; จำนวนหลัก: {frequency_total} &nbsp;&nbsp;|&nbsp;&nbsp; แสดงเลขเด่น Top 6
+                </div>
             """, unsafe_allow_html=True)
 
-            st.markdown(f"""
-            <div class="report-card">
-                <div class="report-title">🔥 เลขชนสุดยอด (SUPER CORE) & ชุดวิควิค 2 ตัว</div>
-                <p><b>เลขไหลสะสม (Echo Core):</b> {' - '.join(echo_core)}</p>
-                <p><b>เลขชนสุดยอด (Super Core):</b> {' - '.join(super_core) if super_core else 'ไม่มีเลขชน'}</p>
-                <div><b>ชุดวิน 2 ตัวเด็ด:</b> {" ".join([f'<span class="badge-core">{p}</span>' for p in pairs])}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            # --- 2. Top 6 Cards Layout + Remaining ---
+            cols = st.columns([1, 1, 1, 1, 1, 1, 1.2])
+            
+            colors = ["#0284c7", "#0369a1", "#0284c7", "#0369a1", "#0284c7", "#0369a1"]
+            for i in range(6):
+                if i < len(top_6):
+                    d = top_6[i]
+                    cnt = frequency_counts.get(d, 0)
+                    with cols[i]:
+                        st.markdown(f"""
+                            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 12px 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                                <div style="font-size: 24px; font-weight: bold; color: {colors[i]};">{d}</div>
+                                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">{cnt} ครั้ง</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+            with cols[6]:
+                rem_text = " &nbsp;|&nbsp; ".join([f"{d} = {frequency_counts.get(d, 0)} ครั้ง" for d in remaining])
+                st.markdown(f"""
+                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 11px; color: #475569; height: 100%; display: flex; align-items: center;">
+                        <div><b>เลขที่เหลือ:</b><br>{rem_text}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # --- 3. Frequency-based Sets (ชุด 5 ตัว, 4 ตัว, 3 ตัว, 2 ตัว) ---
+            st.markdown("##### ชุดเลขเด่นจากความถี่รวม 15 สูตร")
+            
+            set_cols = st.columns(4)
+            
+            def get_stat_str(digits_list):
+                return " | ".join([f"{d}:{frequency_counts.get(d, 0)}" for d in digits_list])
+
+            # ชุด 5 ตัว
+            set5 = top_digits[:5]
+            with set_cols[0]:
+                st.markdown(f"""
+                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
+                        <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 5 ตัว</div>
+                        <div style="font-size: 20px; font-weight: bold; color: #15803d; letter-spacing: 3px;">{" ".join(set5)}</div>
+                        <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set5)}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            # ชุด 4 ตัว
+            set4 = top_digits[:4]
+            with set_cols[1]:
+                st.markdown(f"""
+                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
+                        <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 4 ตัว</div>
+                        <div style="font-size: 20px; font-weight: bold; color: #0369a1; letter-spacing: 3px;">{" ".join(set4)}</div>
+                        <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set4)}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            # ชุด 3 ตัว
+            set3 = top_digits[:3]
+            with set_cols[2]:
+                st.markdown(f"""
+                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
+                        <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 3 ตัว</div>
+                        <div style="font-size: 20px; font-weight: bold; color: #7e22ce; letter-spacing: 3px;">{" ".join(set3)}</div>
+                        <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set3)}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            # ชุด 2 ตัว
+            set2 = top_digits[:2]
+            with set_cols[3]:
+                st.markdown(f"""
+                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
+                        <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 2 ตัว</div>
+                        <div style="font-size: 20px; font-weight: bold; color: #b45309; letter-spacing: 3px;">{" ".join(set2)}</div>
+                        <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set2)}</div>
+                    </div>
+                """, unsafe_allow_html=True)
 
 # ==========================================
 # 6. MANAGEMENT HISTORY PAGE
