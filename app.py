@@ -4,6 +4,23 @@ import os
 from collections import Counter
 
 # ==========================================
+# 0. GLOBAL CONSTANTS
+# ==========================================
+DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+DAILY_NUMBERS = {
+    "Monday":    "462793",
+    "Tuesday":   "639170",
+    "Wednesday": "257308",
+    "Thursday":  "176904",
+    "Friday":    "730259",
+    "Saturday":  "895260",
+    "Sunday":    "062341",
+}
+
+VERSION = "หวยรัฐบาลไทย by TOMMY v7.9"
+
+# ==========================================
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
@@ -30,10 +47,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "หวยรัฐบาลไทย by TOMMY "
-
 # ==========================================
-# 2. SESSION STATE & DAILY NUMBERS INITIALIZATION
+# 2. SESSION STATE INITIALIZATION
 # ==========================================
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -55,16 +70,6 @@ if "ai_settings" not in st.session_state:
         "echo_weight": 0.70,
         "recovery_weight": 0.60,
     }
-
-DAILY_NUMBERS = {
-    "Monday":    "462793",
-    "Tuesday":   "639170",
-    "Wednesday": "257308",
-    "Thursday":  "176904",
-    "Friday":    "730259",
-    "Saturday":  "895260",
-    "Sunday":    "062341",
-}
 
 # ==========================================
 # 3. ROBUST CSV LOADER FUNCTION
@@ -272,29 +277,89 @@ def analyse_all_15_formulas(target_number, daily_number="-", mode="back2"):
     frequency = sorted(counts.items(), key=lambda item: (-item[1], int(item[0])))
     return rows, frequency, len(combined_digits)
 
-def analyse_formulas_by_day(mode="back2", target_day=None, daily_number="-"):
-    results = []
-    target_history = st.session_state.history
+# 📌 เพิ่มเติม: ฟังก์ชัน Backtest ที่ขาดหายไปเพื่อให้เมนู 10 ทำงานได้สมบูรณ์
+def run_backtest_analysis(day_name, history_list, daily_number):
+    summary_data = []
+    details_data = []
     f_weight = st.session_state.ai_settings.get("formula_weight", 1.0)
     c_weight = st.session_state.ai_settings.get("cross_weight", 0.9)
 
+    valid_tests = 0
     for name, func in formulas:
-        classic_score, weighted_score, valid = 0, 0, 0
-        current_weight = c_weight if name == "Cross Multiply" else f_weight
-        
-        for index in range(len(target_history) - 1):
-            nxt = target_history[index + 1].get(mode, "")
-            if not nxt: continue
+        classic_score = 0
+        weighted_score = 0
+        exact_hits = 0
+        correct_positions = 0
+        any_digit_hits = 0
+        valid = 0
+
+        for index in range(len(history_list) - 1):
+            nxt = history_list[index + 1].get("back2", "")
+            if not nxt: 
+                continue
             valid += 1
-            pred = dynamic_formula_wrapper(func, target_history[index].get("first", ""), mode, daily_number)
+            pred = dynamic_formula_wrapper(func, history_list[index].get("first", ""), "back2", daily_number)
+            
+            # คำนวณความแม่นยำ
             pt = calculate_score(pred, nxt)
             classic_score += pt
+            current_weight = c_weight if name == "Cross Multiply" else f_weight
             weighted_score += (pt * (index + 1)) * current_weight
+
+            if pred == nxt:
+                exact_hits += 1
             
+            hit_count, _ = calculate_digit_accuracy(pred, nxt)
+            any_digit_hits += hit_count
+
+            details_data.append({
+                "Formula": name,
+                "Date": history_list[index + 1].get("date", ""),
+                "Prediction": pred,
+                "Actual": nxt,
+                "Score": pt
+            })
+
         percent = ((classic_score / (valid * 100)) * 100) if valid else 0
-        results.append((weighted_score, classic_score, percent, name))
-        
-    return sorted(results, key=lambda x: (-x[0], -x[1], -x[2]))
+        exact_pct = ((exact_hits / valid) * 100) if valid else 0
+        pos_acc = percent
+
+        summary_data.append({
+            "Rank": 0,
+            "Formula": name,
+            "Tests": valid,
+            "Exact Hits": exact_hits,
+            "Exact Match (%)": exact_pct,
+            "Correct Positions": correct_positions,
+            "Position Accuracy (%)": pos_acc,
+            "Any Digit Hits": any_digit_hits,
+            "Any Digit Rate (%)": percent,
+            "Raw Score": classic_score,
+            "Weight": c_weight if name == "Cross Multiply" else f_weight,
+            "Weighted Score": weighted_score
+        })
+        valid_tests = max(valid_tests, valid)
+
+    df_sum = pd.DataFrame(summary_data)
+    if not df_sum.empty:
+        df_sum = df_sum.sort_values(by=["Weighted Score", "Raw Score", "Exact Match (%)"], ascending=False).reset_index(drop=True)
+        df_sum["Rank"] = df_sum.index + 1
+
+    df_det = pd.DataFrame(details_data)
+    return df_sum, df_det, valid_tests
+
+def build_formula_back2_rows(base_number, daily_number):
+    prediction_rows = []
+    for name, func in formulas:
+        raw_res = dynamic_formula_wrapper(func, base_number, "back2", "-")
+        blend_res = dynamic_formula_wrapper(func, base_number, "back2", daily_number)
+        prediction_rows.append({
+            "Formula": name,
+            "Raw": raw_res,
+            "Blended": blend_res,
+            "Back2": blend_res[-2:]
+        })
+    return pd.DataFrame(prediction_rows)
 
 # ==========================================
 # 5. STREAMLIT UI SIDEBAR NAVIGATION
@@ -311,29 +376,26 @@ menu = st.sidebar.radio("เลือกหน้าเมนู:", [
 # 6. ALL-IN-ONE MASTER REPORT 
 # ==========================================
 if menu == "8. All-in-One Master Report":
-    st.title("🏆 สรุปผลวิเคราะหวยรัฐบาลไทยจากสถิติ ")
+    st.title("🏆 สรุปผลวิเคราะห์หวยรัฐบาลไทยจากสถิติ")
     st.caption(f"เวอร์ชัน: {VERSION}")
     
     col1, col2 = st.columns(2)
     with col1:
         day_choice = st.selectbox(
             "📅 เลือกวันประจำงวด:", 
-            ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            DAYS
         )
         
-        # โหลดประวัติจาก CSV ตามวัน
         loaded_history = load_history_by_day(day_choice)
         st.session_state.history = loaded_history
         daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
-        # 🌟 ตรวจสอบการเปลี่ยนวัน เพื่อดึงเลขฐานงวดล่าสุดจาก CSV มาอัปเดตอัตโนมัติ
         if st.session_state.current_day != day_choice:
             st.session_state.current_day = day_choice
             if loaded_history:
                 st.session_state.target_number = loaded_history[0]["first"]
 
     with col2:
-        # หากโหลดประวัติมาได้และยังไม่อัปเดต ให้เซ็ตค่าเริ่มต้น
         if loaded_history and not st.session_state.target_number:
             st.session_state.target_number = loaded_history[0]["first"]
 
@@ -346,7 +408,7 @@ if menu == "8. All-in-One Master Report":
         st.session_state.target_number = target_number
 
     if not st.session_state.history:
-        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV ใน GitHub หรืออัปโหลดผ่านเมนู 'เพิ่ม/จัดการประวัติหวย'")
+        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV หรืออัปโหลดผ่านเมนู 'เพิ่ม/จัดการประวัติหวย'")
     else:
         if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
             if len(target_number) != 6 or not target_number.isdigit():
@@ -440,13 +502,12 @@ if menu == "8. All-in-One Master Report":
                     """, unsafe_allow_html=True)
 
 # ==========================================
-# 7. MANAGEMENT HISTORY PAGE (เพิ่มฟอร์มกรอกข้อมูลสด)
+# 7. MANAGEMENT HISTORY PAGE
 # ==========================================
 elif menu == "1. เพิ่ม/จัดการประวัติหวย":
     st.title("📚 เพิ่มและจัดการประวัติหวยรายวัน")
-    day_upload = st.selectbox("เลือกวันสำหรับจัดการประวัติ:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+    day_upload = st.selectbox("เลือกวันสำหรับจัดการประวัติ:", DAYS)
     
-    # --- ส่วนที่ 1: เพิ่มข้อมูลด้วยการกรอกฟอร์ม (ไม่ต้องอัปโหลด CSV) ---
     with st.expander("➕ เพิ่มข้อมูลงวดล่าสุดด้วยตนเอง (ไม่ต้องอัปโหลด CSV)", expanded=True):
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
@@ -458,21 +519,14 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
             
         if st.button("💾 บันทึกข้อมูลงวดใหม่เข้าสู่ระบบ"):
             if len(input_first) == 6 and input_first.isdigit() and len(input_back2) == 2 and input_back2.isdigit():
-                # ดึงข้อมูลปัจจุบันของวันนั้นมาก่อน (ไม่ว่าจะมาจาก session หรือ โหลดจากไฟล์)
                 current_list = load_history_by_day(day_upload)
-                
-                # สร้างข้อมูลใหม่แทรกไว้บนสุด (งวดล่าสุด)
                 new_entry = {
                     "date": input_date,
                     "day": day_upload,
                     "first": input_first,
                     "back2": input_back2
                 }
-                
-                # เอาข้อมู่วงวดใหม่ไว้บนสุด
                 current_list.insert(0, new_entry)
-                
-                # แปลงกลับเป็น DataFrame แล้วเก็บเข้า session_state.uploaded_csvs ทันที
                 st.session_state.uploaded_csvs[day_upload] = pd.DataFrame(current_list)
                 st.success(f"✅ เพิ่มข้อมูลงวด {input_first} ของวัน {day_upload} สำเร็จเรียบร้อย!")
             else:
@@ -480,7 +534,6 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
 
     st.markdown("---")
 
-    # --- ส่วนที่ 2: อัปโหลดไฟล์ CSV แบบเดิม (เป็นทางเลือกสำรอง) ---
     uploaded_file = st.file_uploader(f"📂 หรืออัปโหลดไฟล์ CSV สำหรับวัน {day_upload}", type=["csv"])
     if uploaded_file is not None:
         try:
@@ -490,7 +543,6 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         except Exception as e:
             st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
 
-    # --- ส่วนที่ 3: แสดงตารางข้อมูลปัจจุบัน ---
     current_history = load_history_by_day(day_upload)
     if current_history:
         st.subheader(f"📋 ข้อมูลประวัติปัจจุบันของวัน: {day_upload}")
@@ -499,17 +551,13 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
 # ==========================================
-# 8. COMPLETE BACKTEST ENGINE + LATEST BACK2
+# 8. COMPLETE BACKTEST ENGINE
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
     st.title("📈 ระบบทดสอบย้อนหลัง (Backtest Engine)")
-    st.caption(
-        "แสดงผล Backtest แยกรายสูตร พร้อมเลขท้าย 2 ตัวที่คำนวณจากเลขฐานล่าสุด"
-    )
+    st.caption("แสดงผล Backtest แยกรายสูตร พร้อมเลขท้าย 2 ตัวที่คำนวณจากเลขฐานล่าสุด")
 
-    backtest_day = st.selectbox(
-        "📅 เลือกวันสำหรับรัน Backtest:", DAYS, key="bt_day"
-    )
+    backtest_day = st.selectbox("📅 เลือกวันสำหรับรัน Backtest:", DAYS, key="bt_day")
     daily_number = DAILY_NUMBERS[backtest_day]
     history = load_history_by_day(backtest_day)
 
@@ -520,37 +568,18 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
         key="bt_target_number"
     )
 
-    st.info(
-        f"วันทดสอบ: {backtest_day} | ประวัติ: {len(history)} งวด | "
-        f"Daily Number: {daily_number}"
-    )
+    st.info(f"วันทดสอบ: {backtest_day} | ประวัติ: {len(history)} งวด | Daily Number: {daily_number}")
 
-    if st.button(
-        "🚀 รันผล Backtest ทั้งหมด", type="primary", use_container_width=True
-    ):
+    if st.button("🚀 รันผล Backtest ทั้งหมด", type="primary", use_container_width=True):
         if len(base_number) != 6 or not base_number.isdigit():
             st.error("กรุณากรอกเลขฐานให้ครบ 6 หลัก")
         elif len(history) < 2:
-            st.warning(
-                f"ข้อมูล {backtest_day} ไม่เพียงพอ ต้องมีอย่างน้อย 2 งวด"
-            )
+            st.warning(f"ข้อมูล {backtest_day} ไม่เพียงพอ ต้องมีอย่างน้อย 2 งวด")
         else:
-            # A. Historical performance: true walk-forward evaluation
-            summary, details, test_count = run_backtest_analysis(
-                backtest_day, history, daily_number
-            )
+            summary, details, test_count = run_backtest_analysis(backtest_day, history, daily_number)
+            prediction_df = build_formula_back2_rows(base_number, daily_number)
 
-            # B. Next-draw predictions: calculate from the user-selected latest base
-            prediction_df = build_formula_back2_rows(
-                base_number, daily_number
-            )
-
-            # C. Merge prediction with historical score by formula name
-            df_bt_detail = summary.merge(
-                prediction_df,
-                on="Formula",
-                how="left"
-            )
+            df_bt_detail = summary.merge(prediction_df, on="Formula", how="left")
             df_bt_detail = df_bt_detail.rename(columns={
                 "Rank": "อันดับ",
                 "Formula": "สูตร",
@@ -569,30 +598,17 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                 "Weighted Score": "คะแนนคูณน้ำหนัก",
             })
 
-            st.success(
-                f"ประมวลผลสำเร็จ: ทดสอบย้อนหลัง {test_count} คู่ข้อมูล "
-                f"และคำนวณเลขงวดถัดไปครบ {len(prediction_df)} สูตร"
-            )
-            st.caption(
-                f"เลขฐานปัจจุบัน: {base_number} | วันทำนาย: {backtest_day} | "
-                f"Daily Number: {daily_number}"
-            )
+            st.success(f"ประมวลผลสำเร็จ: ทดสอบย้อนหลัง {test_count} คู่ข้อมูล และคำนวณเลขงวดถัดไปครบ {len(prediction_df)} สูตร")
 
             st.subheader("📊 ตารางผลลัพธ์รายสูตร + เลขท้าย 2 ตัว")
-            with st.expander(
-                "🔍 ดูตารางรายละเอียดทุกสูตร", expanded=True
-            ):
+            with st.expander("🔍 ดูตารางรายละเอียดทุกสูตร", expanded=True):
                 display_columns = [
                     "อันดับ", "สูตร", "เลขดิบ (Raw)",
                     "เลขผสมวัน (Blended)", "เลขท้าย 2 ตัว (Back2)",
                     "คะแนนคูณน้ำหนัก", "คะแนนดิบ", "Exact Match (%)",
                     "ความแม่นยำตำแหน่ง (%)", "จำนวนงวดทดสอบ"
                 ]
-                st.dataframe(
-                    df_bt_detail[display_columns],
-                    use_container_width=True,
-                    hide_index=True
-                )
+                st.dataframe(df_bt_detail[display_columns], use_container_width=True, hide_index=True)
 
             st.divider()
             st.subheader("🏆 TOP 3 FORMULA — ผล Backtest ย้อนหลัง")
@@ -603,42 +619,21 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                     st.metric(
                         label=f"อันดับ {int(item['อันดับ'])}: {item['สูตร']}",
                         value=f"{item['Exact Match (%)']:.2f}%",
-                        delta=f"ตรงตำแหน่ง {item['ความแม่นยำตำแหน่ง (%)']:.2f}%"
+                        delta=f"ความแม่นยำ {item['ความแม่นยำตำแหน่ง (%)']:.2f}%"
                     )
-                    st.markdown(
-                        f"**เลข Back2 งวดถัดไป: {item['เลขท้าย 2 ตัว (Back2)']}**"
-                    )
-                    st.caption(
-                        f"คะแนนคูณน้ำหนัก: {item['คะแนนคูณน้ำหนัก']:.2f}"
-                    )
+                    st.markdown(f"**เลข Back2 งวดถัดไป: {item['เลขท้าย 2 ตัว (Back2)']}**")
+                    st.caption(f"คะแนนคูณน้ำหนัก: {item['คะแนนคูณน้ำหนัก']:.2f}")
 
             st.divider()
             st.subheader("📈 เปรียบเทียบ Exact Match (%)")
             chart_data = df_bt_detail.set_index("สูตร")[["Exact Match (%)"]]
             st.bar_chart(chart_data)
 
-            with st.expander("🔎 ดูผลทดสอบย้อนหลังรายงวด", expanded=False):
-                selected_formula = st.selectbox(
-                    "เลือกสูตร:", summary["Formula"].tolist(),
-                    key="bt_detail_formula"
-                )
-                st.dataframe(
-                    details[details["Formula"] == selected_formula],
-                    use_container_width=True,
-                    hide_index=True
-                )
-
             with st.expander("📥 ดาวน์โหลดรายงาน Backtest"):
                 st.download_button(
                     "ดาวน์โหลดสรุป Backtest + เลขทำนาย CSV",
                     df_bt_detail.to_csv(index=False).encode("utf-8-sig"),
                     file_name=f"backtest_{backtest_day}_with_predictions.csv",
-                    mime="text/csv"
-                )
-                st.download_button(
-                    "ดาวน์โหลดผลทดสอบรายงวด CSV",
-                    details.to_csv(index=False).encode("utf-8-sig"),
-                    file_name=f"backtest_{backtest_day}_details.csv",
                     mime="text/csv"
                 )
 
