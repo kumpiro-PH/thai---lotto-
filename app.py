@@ -7,7 +7,7 @@ from collections import Counter
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.9 - CSV Master",
+    page_title="THAI AI PROFESSIONAL v7.9 - CSV & Day-of-Week Master",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -30,7 +30,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - CSV & Day-of-Week"
+VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Auto-Target CSV"
 
 # ==========================================
 # 2. SESSION STATE & DAILY NUMBERS INITIALIZATION
@@ -40,6 +40,9 @@ if "history" not in st.session_state:
 
 if "uploaded_csvs" not in st.session_state:
     st.session_state.uploaded_csvs = {}
+
+if "target_number" not in st.session_state:
+    st.session_state.target_number = "423224"
 
 if "ai_settings" not in st.session_state:
     st.session_state.ai_settings = {
@@ -64,11 +67,9 @@ DAILY_NUMBERS = {
 # 3. ROBUST CSV LOADER FUNCTION
 # ==========================================
 def load_history_by_day(day_name):
-    # 1. เช็คก่อนว่ามีการอัปโหลดไฟล์ผ่านหน้าเว็บเข้ามาไหม
     if day_name in st.session_state.uploaded_csvs:
         df = st.session_state.uploaded_csvs[day_name]
     else:
-        # 2. ถ้าไม่มี ให้ดึงจากไฟล์ในเครื่อง/GitHub
         file_map = {
             "Monday": "thai_lottery_monday_history.csv",
             "Tuesday": "thai_lottery_tuesday_history.csv",
@@ -78,7 +79,6 @@ def load_history_by_day(day_name):
             "Saturday": "thai_lottery_saturday_history.csv",
             "Sunday": "thai_lottery_sunday_history.csv"
         }
-        
         filename = file_map.get(day_name)
         if filename and os.path.exists(filename):
             try:
@@ -89,13 +89,19 @@ def load_history_by_day(day_name):
         else:
             return []
 
-    # แปลง DataFrame เป็น History List
     history_list = []
     for _, row in df.iterrows():
+        raw_first = str(row.get("first_prize", ""))
+        # ป้องกันกรณีตัวเลขหายหรือมีทศนิยม ให้แปลงเป็น int ก่อนเติม 0 ข้างหน้าให้ครบ 6 หลัก
+        try:
+            first_val = str(int(float(raw_first))).zfill(6)
+        except:
+            first_val = "000000"
+
         history_list.append({
             "date": str(row.get("date_be", "")),
             "day": day_name,
-            "first": str(row.get("first_prize", "")).zfill(6),
+            "first": first_val,
             "back2": str(row.get("last_2_digits", "")).zfill(2)
         })
     return history_list
@@ -309,15 +315,29 @@ if menu == "8. All-in-One Master Report":
     col1, col2 = st.columns(2)
     with col1:
         day_choice = st.selectbox("📅 เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-        st.session_state.history = load_history_by_day(day_choice)
+        
+        # โหลดประวัติจาก CSV ตามวัน
+        loaded_history = load_history_by_day(day_choice)
+        st.session_state.history = loaded_history
         daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
+        # 🌟 อัพเดทเลขฐานอัตโนมัติจากงวดล่าสุดใน CSV ทันทีกเปลี่ยนวัน
+        if loaded_history:
+            st.session_state.target_number = loaded_history[0]["first"]
+
     with col2:
-        default_target = st.session_state.history[0]["first"] if st.session_state.history else "423224"
-        target_number = st.text_input("📌 เลขฐาน 6 หลักงวดล่าสุด:", value=default_target, max_chars=6)
+        # ผูกเข้ากับ st.session_state.target_number โดยตรงเพื่อให้เปลี่ยนตามวันแบบ Real-time
+        target_number = st.text_input(
+            "📌 เลขฐาน 6 หลักงวดล่าสุด:", 
+            value=st.session_state.target_number, 
+            max_chars=6,
+            key="target_number_input"
+        )
+        # ซิงค์ค่ากลับเข้า session_state
+        st.session_state.target_number = target_number
 
     if not st.session_state.history:
-        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาอัปโหลดไฟล์ CSV ประจำวันในเมนู 'เพิ่ม/จัดการประวัติหวย'")
+        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV ใน GitHub หรืออัปโหลดผ่านเมนู 'เพิ่ม/จัดการประวัติหวย'")
     else:
         if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
             if len(target_number) != 6 or not target_number.isdigit():
@@ -411,11 +431,10 @@ if menu == "8. All-in-One Master Report":
                     """, unsafe_allow_html=True)
 
 # ==========================================
-# 7. MANAGEMENT HISTORY PAGE (มีระบบอัปโหลด CSV สำรอง)
+# 7. MANAGEMENT HISTORY PAGE
 # ==========================================
 elif menu == "1. เพิ่ม/จัดการประวัติหวย":
     st.title("📚 อัปโหลดและจัดการไฟล์ CSV รายวัน")
-    
     day_upload = st.selectbox("เลือกวันสำหรับอัปโหลด/ดูประวัติ:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
     
     uploaded_file = st.file_uploader(f"📂 อัปโหลดไฟล์ CSV สำหรับวัน {day_upload}", type=["csv"])
@@ -432,7 +451,7 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         st.subheader(f"📋 ข้อมูลประวัติปัจจุบันของวัน: {day_upload}")
         st.dataframe(pd.DataFrame(current_history), use_container_width=True)
     else:
-        st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload} (ระบบจะพยายามอ่านจากไฟล์ในเครื่องหรือไฟล์บน GitHub หากมีอยู่)")
+        st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload} ในโฟลเดอร์โปรเจกต์")
 
 # ==========================================
 # 8. BACKTEST PAGE
@@ -448,7 +467,7 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
     daily_num_arg = DAILY_NUMBERS.get(selected_backtest_day, "-")
 
     if len(st.session_state.history) < 2:
-        st.warning(f"⚠️ ข้อมูลประวัติของวัน {selected_backtest_day} มีไม่เพียงพอ (น้อยกว่า 2 งวด) กรุณาอัปโหลดไฟล์ CSV ในเมนู 'เพิ่ม/จัดการประวัติหวย'")
+        st.warning(f"⚠️ ข้อมูลประวัติของวัน {selected_backtest_day} มีไม่เพียงพอสำหรับการทำ Backtest")
     else:
         st.info(f"ประมวลผล Backtest จากวัน {selected_backtest_day} (จำนวน {len(st.session_state.history)} งวด)")
         res_b2 = analyse_formulas_by_day("back2", target_day=selected_backtest_day, daily_number=daily_num_arg)
