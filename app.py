@@ -440,27 +440,63 @@ if menu == "8. All-in-One Master Report":
                     """, unsafe_allow_html=True)
 
 # ==========================================
-# 7. MANAGEMENT HISTORY PAGE
+# 7. MANAGEMENT HISTORY PAGE (เพิ่มฟอร์มกรอกข้อมูลสด)
 # ==========================================
 elif menu == "1. เพิ่ม/จัดการประวัติหวย":
-    st.title("📚 อัปโหลดและจัดการไฟล์ CSV รายวัน")
-    day_upload = st.selectbox("เลือกวันสำหรับอัปโหลด/ดูประวัติ:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+    st.title("📚 เพิ่มและจัดการประวัติหวยรายวัน")
+    day_upload = st.selectbox("เลือกวันสำหรับจัดการประวัติ:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
     
-    uploaded_file = st.file_uploader(f"📂 อัปโหลดไฟล์ CSV สำหรับวัน {day_upload}", type=["csv"])
+    # --- ส่วนที่ 1: เพิ่มข้อมูลด้วยการกรอกฟอร์ม (ไม่ต้องอัปโหลด CSV) ---
+    with st.expander("➕ เพิ่มข้อมูลงวดล่าสุดด้วยตนเอง (ไม่ต้องอัปโหลด CSV)", expanded=True):
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            input_date = st.text_input("📅 วันที่ (พ.ศ.) เช่น 01/07/2569", value="01/07/2569")
+        with col_f2:
+            input_first = st.text_input("🎯 รางวัลที่ 1 (6 หลัก)", max_chars=6, value="")
+        with col_f3:
+            input_back2 = st.text_input("🔢 เลขท้าย 2 ตัว", max_chars=2, value="")
+            
+        if st.button("💾 บันทึกข้อมูลงวดใหม่เข้าสู่ระบบ"):
+            if len(input_first) == 6 and input_first.isdigit() and len(input_back2) == 2 and input_back2.isdigit():
+                # ดึงข้อมูลปัจจุบันของวันนั้นมาก่อน (ไม่ว่าจะมาจาก session หรือ โหลดจากไฟล์)
+                current_list = load_history_by_day(day_upload)
+                
+                # สร้างข้อมูลใหม่แทรกไว้บนสุด (งวดล่าสุด)
+                new_entry = {
+                    "date": input_date,
+                    "day": day_upload,
+                    "first": input_first,
+                    "back2": input_back2
+                }
+                
+                # เอาข้อมู่วงวดใหม่ไว้บนสุด
+                current_list.insert(0, new_entry)
+                
+                # แปลงกลับเป็น DataFrame แล้วเก็บเข้า session_state.uploaded_csvs ทันที
+                st.session_state.uploaded_csvs[day_upload] = pd.DataFrame(current_list)
+                st.success(f"✅ เพิ่มข้อมูลงวด {input_first} ของวัน {day_upload} สำเร็จเรียบร้อย!")
+            else:
+                st.error("❌ กรุณากรอกรางวัลที่ 1 ให้ครบ 6 หลัก และเลขท้าย 2 ตัวให้ครบ 2 หลักด้วยตัวเลขเท่านั้น")
+
+    st.markdown("---")
+
+    # --- ส่วนที่ 2: อัปโหลดไฟล์ CSV แบบเดิม (เป็นทางเลือกสำรอง) ---
+    uploaded_file = st.file_uploader(f"📂 หรืออัปโหลดไฟล์ CSV สำหรับวัน {day_upload}", type=["csv"])
     if uploaded_file is not None:
         try:
             df_up = pd.read_csv(uploaded_file)
             st.session_state.uploaded_csvs[day_upload] = df_up
-            st.success(f"✅ อัปโหลดและบันทึกข้อมูลของวัน {day_upload} สำเร็จ!")
+            st.success(f"✅ อัปโหลดไฟล์ CSV ของวัน {day_upload} สำเร็จ!")
         except Exception as e:
             st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
 
+    # --- ส่วนที่ 3: แสดงตารางข้อมูลปัจจุบัน ---
     current_history = load_history_by_day(day_upload)
     if current_history:
         st.subheader(f"📋 ข้อมูลประวัติปัจจุบันของวัน: {day_upload}")
         st.dataframe(pd.DataFrame(current_history), use_container_width=True)
     else:
-        st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload} ในโฟลเดอร์โปรเจกต์")
+        st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
 # ==========================================
 # 8. BACKTEST PAGE
