@@ -499,7 +499,7 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
 # ==========================================
-# 10. BACKTEST PAGE (ฉบับสมบูรณ์: มีเลขท้าย 2 ตัว + คะแนนสถิติ)
+# 10. BACKTEST PAGE (ฉบับป้องกัน TypeError และดึงค่า Back2 อย่างปลอดภัย)
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
 
@@ -529,23 +529,23 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                 daily_number=daily_number
             )
 
-            # 3. ดึงผลลัพธ์เลขท้าย 2 ตัวงวดล่าสุดของแต่ละสูตร (จากฟังก์ชันเดียวกับหน้า Master Report)
-            # *หมายเหตุ: หากฟังก์ชันในระบบของคุณชื่ออื่น ให้เปลี่ยนชื่อฟังก์ชันตรงนี้ให้ตรงกัน
+            # 3. ดึงผลลัพธ์เลขท้าย 2 ตัวงวดล่าสุดอย่างปลอดภัย
+            back2_dict = {}
             try:
-                formula_back2_data = analyse_all_15_formulas(backtest_day, daily_number)
+                formula_back2_data = analyse_all_15_formulas()
+                if formula_back2_data:
+                    for row in formula_back2_data:
+                        if isinstance(row, (list, tuple)) and len(row) >= 4:
+                            back2_dict[row[0]] = row[3]
             except Exception:
                 try:
-                    formula_back2_data = analyse_all_15_formulas()
+                    formula_back2_data = analyse_all_15_formulas(backtest_day, daily_number)
+                    if formula_back2_data:
+                        for row in formula_back2_data:
+                            if isinstance(row, (list, tuple)) and len(row) >= 4:
+                                back2_dict[row[0]] = row[3]
                 except Exception:
-                    formula_back2_data = []
-
-            # สร้าง Dict จับคู่ชื่อสูตรกับเลขท้าย 2 ตัว (Back2)
-            back2_dict = {}
-            for row in formula_back2_data:
-                # โครงสร้างตัวอย่าง: [สูตร, เลขดิบ, เลขผสม, ท้าย 2 ตัว]
-                formula_name = row[0]
-                back2_value = row[3]
-                back2_dict[formula_name] = back2_value
+                    pass
 
             # 4. แปลงผลลัพธ์ Backtest เป็น DataFrame หลัก
             df_bt_detail = pd.DataFrame(
@@ -558,7 +558,7 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                 ]
             )
 
-            # นำเลขท้าย 2 ตัวจาก dict มาใส่เป็นคอลัมน์ใหม่
+            # นำเลขท้าย 2 ตัวจาก dict มาใส่เป็นคอลัมน์ใหม่ (ถ้าไม่มีให้แสดง "-")
             df_bt_detail["ท้าย 2 ตัว (Back2)"] = df_bt_detail["สูตร (Formula)"].map(back2_dict).fillna("-")
 
             # จัดเรียงลำดับคอลัมน์ให้ "สูตร" และ "เลขท้าย 2 ตัว" อยู่ด้านหน้า
