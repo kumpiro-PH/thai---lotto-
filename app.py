@@ -7,7 +7,7 @@ from collections import Counter
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.9 - Add & Manage CSV",
+    page_title="THAI AI PROFESSIONAL v7.9 - Auto CSV Master",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -30,7 +30,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Add Data Form"
+VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Auto CSV Sync"
 
 # ==========================================
 # 2. SESSION STATE & DAILY NUMBERS INITIALIZATION
@@ -61,12 +61,12 @@ DAILY_NUMBERS = {
 }
 
 # ==========================================
-# 3. CSV LOADER WITH SOURCE STATUS
+# 3. CSV LOADER FUNCTION (พร้อมระบบเช็คสถานะ)
 # ==========================================
 def load_history_by_day(day_name):
     if day_name in st.session_state.uploaded_csvs:
         df = st.session_state.uploaded_csvs[day_name]
-        st.sidebar.success(f"📂 [{day_name}] ดึงจาก: ไฟล์อัปโหลด (Web Upload)")
+        st.sidebar.success(f"📂 [{day_name}] ดึงจาก: ข้อมูลอัปเดตบนเว็บ")
     else:
         file_map = {
             "Monday": "thai_lottery_monday_history.csv",
@@ -81,12 +81,12 @@ def load_history_by_day(day_name):
         if filename and os.path.exists(filename):
             try:
                 df = pd.read_csv(filename)
-                st.sidebar.info(f"🌐 [{day_name}] ดึงจาก: GitHub / โฟลเดอร์ระบบ (`{filename}`)")
+                st.sidebar.info(f"🌐 [{day_name}] ดึงจาก: ไฟล์ CSV ประจำวัน")
             except Exception as e:
                 st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ {filename}: {e}")
                 return []
         else:
-            st.sidebar.warning(f"⚠️ [{day_name}] ไม่พบไฟล์ใน GitHub หรือโฟลเดอร์ระบบ")
+            st.sidebar.warning(f"⚠️ [{day_name}] ไม่พบไฟล์ CSV ประจำวัน")
             return []
 
     history_list = []
@@ -314,6 +314,7 @@ if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
     st.caption(f"เวอร์ชัน: {VERSION}")
     
+    # ฟังก์ชัน Callback เมื่อเปลี่ยนวันใน Selectbox จะทำการดึงงวดล่าสุดจาก CSV มาใส่ช่อง input ทันที
     def on_day_change():
         selected_day = st.session_state.selected_day_box
         history_data = load_history_by_day(selected_day)
@@ -343,7 +344,7 @@ if menu == "8. All-in-One Master Report":
         )
 
     if not st.session_state.history:
-        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV ใน GitHub หรือเพิ่มข้อมูลในเมนู 'เพิ่ม/จัดการประวัติหวย'")
+        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV หรือเพิ่มข้อมูลในเมนู 'เพิ่ม/จัดการประวัติหวย'")
     else:
         if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
             if len(target_number) != 6 or not target_number.isdigit():
@@ -443,7 +444,6 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
     st.title("📚 เพิ่ม / จัดการประวัติและอัปเดตข้อมูลหวย")
     day_upload = st.selectbox("เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
     
-    # 🌟 ฟอร์มเพิ่มข้อมูลหวยงวดใหม่ (Add New Draw Form)
     with st.expander("➕ เพิ่มข้อมูลงวดใหม่ (Add New Draw)", expanded=True):
         with st.form("add_form"):
             col_f1, col_f2 = st.columns(2)
@@ -462,7 +462,6 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
                 if len(new_first) != 6 or not new_first.isdigit():
                     st.error("❌ กรุณากรอกรางวัลที่ 1 เป็นตัวเลข 6 หลักให้ถูกต้อง")
                 else:
-                    # ดึง DataFrame ปัจจุบันมาต่อแถวใหม่
                     if day_upload in st.session_state.uploaded_csvs:
                         df_current = st.session_state.uploaded_csvs[day_upload]
                     else:
@@ -488,14 +487,12 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
                         'last_3_2': new_l3_2
                     }])
                     
-                    # เอาแถวใหม่ไว้บนสุด (งวดล่าสุด)
                     df_updated = pd.concat([new_row, df_current], ignore_index=True)
                     st.session_state.uploaded_csvs[day_upload] = df_updated
                     st.success(f"✅ บันทึกข้อมูลงวด {new_date} ของวัน {day_upload} เรียบร้อยแล้ว!")
 
     st.markdown("---")
     
-    # ส่วนอัปโหลดไฟล์ CSV สำรอง
     uploaded_file = st.file_uploader(f"📂 หรืออัปโหลดไฟล์ CSV ทั้งชุดสำหรับวัน {day_upload}", type=["csv"])
     if uploaded_file is not None:
         try:
