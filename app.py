@@ -8,7 +8,7 @@ from itertools import combinations
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.8",
+    page_title="THAI AI PROFESSIONAL v7.9 - Day-OfWeek Master",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -46,31 +46,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.8 MASTER AI - 2D & Prize 1 Only"
+VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Day-of-Week & 15 Formulas"
 
 # ==========================================
 # 2. DEFAULT HISTORY DATA & INITIALIZATION
 # ==========================================
-DEFAULT_HISTORY = [
-    {"date": "16/03/2569", "day": "Monday", "first": "833009", "back2": "64"},
-    {"date": "01/04/2569", "day": "Wednesday", "first": "292514", "back2": "47"},
-    {"date": "16/04/2569", "day": "Thursday", "first": "309612", "back2": "77"},
-    {"date": "02/05/2569", "day": "Saturday", "first": "536077", "back2": "43"},
-    {"date": "16/05/2569", "day": "Saturday", "first": "107387", "back2": "08"},
-    {"date": "01/06/2569", "day": "Monday", "first": "173770", "back2": "95"},
-    {"date": "16/06/2569", "day": "Tuesday", "first": "287184", "back2": "48"},
-    {"date": "01/07/2569", "day": "Wednesday", "first": "751495", "back2": "62"},
-    {"date": "16/07/2569", "day": "Thursday", "first": "639214", "back2": "71"},
-    {"date": "01/08/2569", "day": "Saturday", "first": "932479", "back2": "69"},
-    {"date": "16/08/2569", "day": "Sunday", "first": "004615", "back2": "53"},
-    {"date": "01/09/2569", "day": "Tuesday", "first": "417212", "back2": "04"},
-    {"date": "16/09/2569", "day": "Wednesday", "first": "730640", "back2": "64"},
-    {"date": "01/10/2569", "day": "Thursday", "first": "402701", "back2": "70"},
-    {"date": "16/10/2569", "day": "Friday", "first": "011781", "back2": "48"}
-]
-
 if "history" not in st.session_state:
-    st.session_state.history = DEFAULT_HISTORY
+    st.session_state.history = []
 
 if "ai_settings" not in st.session_state:
     st.session_state.ai_settings = {
@@ -82,8 +64,8 @@ if "ai_settings" not in st.session_state:
     }
 
 DAILY_NUMBERS = {
-    "Monday": "6185270", "Tuesday": "7306481", "Wednesday": "6845902",
-    "Thursday": "5078136", "Friday": "9627401", "Saturday": "8413657", "Sunday": "2956814",
+    "Monday": "462793", "Tuesday": "639170", "Wednesday": "257308",
+    "Thursday": "176904", "Friday": "730259", "Saturday": "895260", "Sunday": "062341",
 }
 
 # ==========================================
@@ -119,7 +101,7 @@ def calculate_score(result, answer):
     hit, _ = calculate_digit_accuracy(result, answer)
     return min(hit * 25, 100)
 
-# สูตรคำนวณทั้งหมด
+# สูตรคำนวณทั้งหมด (15 สูตร + Cross Multiply)
 def formula_cross_multiply(number, mode="back2", daily_number="-"):
     target = get_target_digits(number, "first")[-4:]
     d1, d2 = safe_int(target[0]), safe_int(target[1])
@@ -252,24 +234,25 @@ def analyse_all_15_formulas(target_number, daily_number="-", mode="back2"):
     frequency = sorted(counts.items(), key=lambda item: (-item[1], int(item[0])))
     return rows, frequency, len(combined_digits)
 
-def get_echo_core(history_data):
-    if not history_data: return ["0", "1", "2", "3", "4"]
-    pool = []
-    for rec in history_data[-5:]:
-        pool.extend(list(safe_digits(rec.get("first", ""))))
-        pool.extend(list(safe_digits(rec.get("back2", ""))))
-    return [d for d, _ in Counter(pool).most_common(5)]
-
-def analyse_formulas(mode="back2", target_number=None, daily_number="-"):
+# ฟังก์ชัน Backtest แบบกรองตามวันในสัปดาห์ (Day-of-Week Filtered Backtest)
+def analyse_formulas_by_day(mode="back2", target_day=None, daily_number="-"):
     results = []
-    test_range = min(len(st.session_state.history) - 1, 70)
-    target_history = st.session_state.history[-(test_range+1):] if test_range > 0 else st.session_state.history
+    
+    # กรองประวัติเฉพาะวันในสัปดาห์ที่เลือก (ถ้ามีระบุวัน และไม่ใช่โหมดไม่ใช้)
+    if target_day and target_day != "ไม่ใช้ (Manual)":
+        filtered_history = [h for h in st.session_state.history if h.get("day") == target_day]
+        # หากประวัติในวันนั้นมีน้อยเกินไป ให้ fallback ใช้ประวัติทั้งหมด
+        target_history = filtered_history if len(filtered_history) >= 2 else st.session_state.history
+    else:
+        target_history = st.session_state.history
+
     f_weight = st.session_state.ai_settings.get("formula_weight", 1.0)
     c_weight = st.session_state.ai_settings.get("cross_weight", 0.9)
 
     for name, func in formulas:
         classic_score, weighted_score, valid = 0, 0, 0
         current_weight = c_weight if name == "Cross Multiply" else f_weight
+        
         for index in range(len(target_history) - 1):
             nxt = target_history[index + 1].get(mode, "")
             if not nxt: continue
@@ -278,8 +261,10 @@ def analyse_formulas(mode="back2", target_number=None, daily_number="-"):
             pt = calculate_score(pred, nxt)
             classic_score += pt
             weighted_score += (pt * (index + 1)) * current_weight
+            
         percent = ((classic_score / (valid * 100)) * 100) if valid else 0
         results.append((weighted_score, classic_score, percent, name))
+        
     return sorted(results, key=lambda x: (-x[0], -x[1], -x[2]))
 
 # ==========================================
@@ -294,7 +279,7 @@ menu = st.sidebar.radio("เลือกหน้าเมนู:", [
 ])
 
 # ==========================================
-# 5. ALL-IN-ONE MASTER REPORT (UI ตามตัวอย่างรูปภาพ)
+# 5. ALL-IN-ONE MASTER REPORT (UI ตามตัวอย่างรูปภาพ + รองรับระบบวัน)
 # ==========================================
 if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
@@ -306,13 +291,13 @@ if menu == "8. All-in-One Master Report":
         target_number = st.text_input("📌 เลขฐาน 6 หลักงวดล่าสุด:", value=default_target, max_chars=6)
     with col2:
         day_choice = st.selectbox("📅 เลือกวันประจำงวด:", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "ไม่ใช้ (Manual)"])
-        daily_number = DAILY_NUMBERS.get(day_choice, "3506429")
+        daily_number = DAILY_NUMBERS.get(day_choice, "3506429") if day_choice != "ไม่ใช้ (Manual)" else "-"
 
     if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
         if len(target_number) != 6 or not target_number.isdigit():
             st.error("❌ กรุณากรอกเลขฐาน 6 หลักให้ถูกต้อง")
         else:
-            # คำนวณความถี่ 15 สูตร
+            # คำนวณความถี่ 15 สูตร โดยผสาน Daily Number และ Day Context
             frequency_rows, frequency, frequency_total = analyse_all_15_formulas(
                 target_number=target_number,
                 daily_number=daily_number,
@@ -328,7 +313,7 @@ if menu == "8. All-in-One Master Report":
             # --- 1. Header Bar Summary ---
             st.markdown(f"""
                 <div style="background-color: #f8fafc; padding: 10px 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-weight: 600; color: #1e293b;">
-                    เลขฐาน: {target_number} &nbsp;&nbsp;|&nbsp;&nbsp; Daily Number: {daily_number} &nbsp;&nbsp;|&nbsp;&nbsp; จำนวนสูตร: 15 &nbsp;&nbsp;|&nbsp;&nbsp; จำนวนหลัก: {frequency_total} &nbsp;&nbsp;|&nbsp;&nbsp; แสดงเลขเด่น Top 6
+                    วัน: {day_choice}   |   เลขฐาน: {target_number}   |   Daily Number: {daily_number}   |   จำนวนสูตร: 15   |   จำนวนหลัก: {frequency_total}
                 </div>
             """, unsafe_allow_html=True)
 
@@ -349,7 +334,7 @@ if menu == "8. All-in-One Master Report":
                         """, unsafe_allow_html=True)
 
             with cols[6]:
-                rem_text = " &nbsp;|&nbsp; ".join([f"{d} = {frequency_counts.get(d, 0)} ครั้ง" for d in remaining])
+                rem_text = "  |  ".join([f"{d} = {frequency_counts.get(d, 0)} ครั้ง" for d in remaining])
                 st.markdown(f"""
                     <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 11px; color: #475569; height: 100%; display: flex; align-items: center;">
                         <div><b>เลขที่เหลือ:</b><br>{rem_text}</div>
@@ -359,7 +344,7 @@ if menu == "8. All-in-One Master Report":
             st.markdown("<br>", unsafe_allow_html=True)
 
             # --- 3. Frequency-based Sets (ชุด 5 ตัว, 4 ตัว, 3 ตัว, 2 ตัว) ---
-            st.markdown("##### ชุดเลขเด่นจากความถี่รวม 15 สูตร")
+            st.markdown("##### ชุดเลขเด่นจากความถี่รวม 15 สูตร (อิงตามสถิติวันและเลขประจำวัน)")
             
             set_cols = st.columns(4)
             
@@ -420,7 +405,7 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         st.subheader("➕ เพิ่มรางวัลงวดใหม่")
         col_a, col_b, col_c = st.columns(3)
         date_in = col_a.text_input("งวดวันที่ (เช่น 16 พ.ย. 2569)")
-        day_in = col_b.selectbox("วัน", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+        day_in = col_b.selectbox("วันในสัปดาห์", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
         first_in = col_c.text_input("รางวัลที่ 1 (6 หลัก)")
         
         b2_in = st.text_input("ท้าย 2 ตัว (2 หลัก)")
@@ -439,18 +424,26 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
     st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True)
 
 # ==========================================
-# 7. BACKTEST PAGE
+# 7. BACKTEST PAGE (รองรับการคัดกรองตามวัน)
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
     st.title("📈 รันระบบทดสอบย้อนหลัง (Backtest Engine)")
     
+    selected_backtest_day = st.selectbox(
+        "📅 เลือกกรองสถิติตามวันในสัปดาห์สำหรับการทำ Backtest:", 
+        ["ทั้งหมด (All Days)", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    )
+    
+    day_filter_arg = None if selected_backtest_day == "ทั้งหมด (All Days)" else selected_backtest_day
+    daily_num_arg = DAILY_NUMBERS.get(day_filter_arg, "-") if day_filter_arg else "-"
+
     if len(st.session_state.history) < 2:
         st.warning("⚠️ ต้องการข้อมูลอย่างน้อย 2 งวดขึ้นไปในการทำ Backtest")
     else:
-        st.info(f"ประมวลผลจากประวัติสะสมทั้งหมด {len(st.session_state.history)} งวด")
+        st.info(f"ประมวลผลระบบ Backtest (เงื่อนไขวัน: {selected_backtest_day})")
         
-        res_b2 = analyse_formulas("back2")
-        st.subheader("🏆 Top 3 สูตรเจาะตำแหน่ง: เลขท้าย 2 ตัว (Back 2)")
+        res_b2 = analyse_formulas_by_day("back2", target_day=day_filter_arg, daily_number=daily_num_arg)
+        st.subheader(f"🏆 Top 3 สูตรเจาะตำแหน่งยอดเยี่ยม ({selected_backtest_day})")
         for rank, item in enumerate(res_b2[:3], 1):
             st.write(f"**อันดับ {rank}: {item[3]}** | คะแนนคูณน้ำหนัก: {item[0]:.2f} | ความแม่นยำรวม: {item[2]:.2f}%")
 
