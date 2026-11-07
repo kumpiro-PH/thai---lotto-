@@ -499,116 +499,148 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
 # ==========================================
-# 10. BACKTEST PAGE (ฉบับแก้ไขดึงเลขท้าย 2 ตัวให้แสดงผลครบถ้วน)
+# 8. COMPLETE BACKTEST ENGINE + LATEST BACK2
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
-
     st.title("📈 ระบบทดสอบย้อนหลัง (Backtest Engine)")
-    st.caption("วิเคราะห์คะแนนและความแม่นยำแยกรายสูตร พร้อมแสดงเลขท้าย 2 ตัวงวดล่าสุด")
-
-    backtest_day = st.selectbox(
-        "📅 เลือกวันสำหรับรัน Backtest:",
-        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-        key="bt_day"
+    st.caption(
+        "แสดงผล Backtest แยกรายสูตร พร้อมเลขท้าย 2 ตัวที่คำนวณจากเลขฐานล่าสุด"
     )
 
-    if st.button("🚀 รันผล Backtest ทั้งหมด", type="primary", use_container_width=True):
+    backtest_day = st.selectbox(
+        "📅 เลือกวันสำหรับรัน Backtest:", DAYS, key="bt_day"
+    )
+    daily_number = DAILY_NUMBERS[backtest_day]
+    history = load_history_by_day(backtest_day)
 
-        # 1. โหลดประวัติของวันที่เลือก
-        history = load_history_by_day(backtest_day)
-        st.session_state.history = history
-        daily_number = DAILY_NUMBERS.get(backtest_day, "-")
+    base_number = st.text_input(
+        "📌 เลขฐาน 6 หลักงวดล่าสุดสำหรับคำนวณเลขงวดถัดไป:",
+        value=st.session_state.get("target_number", "423224"),
+        max_chars=6,
+        key="bt_target_number"
+    )
 
-        if len(history) < 2:
-            st.warning(f"ข้อมูล {backtest_day} ไม่เพียงพอ ต้องมีอย่างน้อย 2 งวด")
+    st.info(
+        f"วันทดสอบ: {backtest_day} | ประวัติ: {len(history)} งวด | "
+        f"Daily Number: {daily_number}"
+    )
+
+    if st.button(
+        "🚀 รันผล Backtest ทั้งหมด", type="primary", use_container_width=True
+    ):
+        if len(base_number) != 6 or not base_number.isdigit():
+            st.error("กรุณากรอกเลขฐานให้ครบ 6 หลัก")
+        elif len(history) < 2:
+            st.warning(
+                f"ข้อมูล {backtest_day} ไม่เพียงพอ ต้องมีอย่างน้อย 2 งวด"
+            )
         else:
-            # 2. เรียกฟังก์ชันวิเคราะห์ Backtest (คะแนนและความแม่นยำ)
-            results = analyse_formulas_by_day(
-                mode="back2",
-                target_day=backtest_day,
-                daily_number=daily_number
+            # A. Historical performance: true walk-forward evaluation
+            summary, details, test_count = run_backtest_analysis(
+                backtest_day, history, daily_number
             )
 
-            # 3. ดึงผลลัพธ์เลขท้าย 2 ตัวงวดล่าสุดของแต่ละสูตร (ใช้ฟังก์ชันเดียวกับหน้า Master Report แบบส่งค่าตำแหน่ง)
-            back2_dict = {}
-            try:
-                # ลองเรียกแบบส่งพารามิเตอร์เรียงตามตำแหน่ง (ปรับชื่อฟังก์ชันให้ตรงกับที่ใช้ใน Master Report ของคุณ)
-                formula_back2_data = analyse_all_15_formulas(backtest_day, daily_number)
-                if formula_back2_data:
-                    for row in formula_back2_data:
-                        if isinstance(row, (list, tuple)) and len(row) >= 4:
-                            # row[0] = ชื่อสูตร, row[3] = เลขท้าย 2 ตัว (Back2)
-                            back2_dict[row[0]] = row[3]
-            except Exception:
-                try:
-                    # เผื่อฟังก์ชันใช้พารามิเตอร์เดี่ยว
-                    formula_back2_data = analyse_all_15_formulas(backtest_day)
-                    if formula_back2_data:
-                        for row in formula_back2_data:
-                            if isinstance(row, (list, tuple)) and len(row) >= 4:
-                                back2_dict[row[0]] = row[3]
-                except Exception:
-                    pass
+            # B. Next-draw predictions: calculate from the user-selected latest base
+            prediction_df = build_formula_back2_rows(
+                base_number, daily_number
+            )
 
-            # 4. แปลงผลลัพธ์ Backtest เป็น DataFrame หลัก
-            df_bt_detail = pd.DataFrame(
-                results,
-                columns=[
-                    "คะแนนน้ำหนัก (Weighted Score)",
-                    "คะแนนดิบ (Raw Score)",
-                    "ความแม่นยำ (%) (Accuracy)",
-                    "สูตร (Formula)"
+            # C. Merge prediction with historical score by formula name
+            df_bt_detail = summary.merge(
+                prediction_df,
+                on="Formula",
+                how="left"
+            )
+            df_bt_detail = df_bt_detail.rename(columns={
+                "Rank": "อันดับ",
+                "Formula": "สูตร",
+                "Raw": "เลขดิบ (Raw)",
+                "Blended": "เลขผสมวัน (Blended)",
+                "Back2": "เลขท้าย 2 ตัว (Back2)",
+                "Tests": "จำนวนงวดทดสอบ",
+                "Exact Hits": "ถูกตรง 2 ตำแหน่ง",
+                "Exact Match (%)": "Exact Match (%)",
+                "Correct Positions": "จำนวนหลักถูกตำแหน่ง",
+                "Position Accuracy (%)": "ความแม่นยำตำแหน่ง (%)",
+                "Any Digit Hits": "จำนวนตัวเลขที่ตรงกัน",
+                "Any Digit Rate (%)": "ความถี่ตัวเลขตรงกัน (%)",
+                "Raw Score": "คะแนนดิบ",
+                "Weight": "น้ำหนัก",
+                "Weighted Score": "คะแนนคูณน้ำหนัก",
+            })
+
+            st.success(
+                f"ประมวลผลสำเร็จ: ทดสอบย้อนหลัง {test_count} คู่ข้อมูล "
+                f"และคำนวณเลขงวดถัดไปครบ {len(prediction_df)} สูตร"
+            )
+            st.caption(
+                f"เลขฐานปัจจุบัน: {base_number} | วันทำนาย: {backtest_day} | "
+                f"Daily Number: {daily_number}"
+            )
+
+            st.subheader("📊 ตารางผลลัพธ์รายสูตร + เลขท้าย 2 ตัว")
+            with st.expander(
+                "🔍 ดูตารางรายละเอียดทุกสูตร", expanded=True
+            ):
+                display_columns = [
+                    "อันดับ", "สูตร", "เลขดิบ (Raw)",
+                    "เลขผสมวัน (Blended)", "เลขท้าย 2 ตัว (Back2)",
+                    "คะแนนคูณน้ำหนัก", "คะแนนดิบ", "Exact Match (%)",
+                    "ความแม่นยำตำแหน่ง (%)", "จำนวนงวดทดสอบ"
                 ]
-            )
-
-            # นำเลขท้าย 2 ตัวจาก dict มาใส่เป็นคอลัมน์ใหม่
-            df_bt_detail["ท้าย 2 ตัว (Back2)"] = df_bt_detail["สูตร (Formula)"].map(back2_dict).fillna("-")
-
-            # จัดเรียงลำดับคอลัมน์ให้ "สูตร" และ "เลขท้าย 2 ตัว" อยู่ด้านหน้าสุด
-            df_bt_detail = df_bt_detail[[
-                "สูตร (Formula)",
-                "ท้าย 2 ตัว (Back2)",
-                "คะแนนน้ำหนัก (Weighted Score)",
-                "คะแนนดิบ (Raw Score)",
-                "ความแม่นยำ (%) (Accuracy)"
-            ]]
-
-            # ปัดเศษทศนิยม
-            df_bt_detail["คะแนนน้ำหนัก (Weighted Score)"] = df_bt_detail["คะแนนน้ำหนัก (Weighted Score)"].round(2)
-            df_bt_detail["คะแนนดิบ (Raw Score)"] = df_bt_detail["คะแนนดิบ (Raw Score)"].round(2)
-            df_bt_detail["ความแม่นยำ (%) (Accuracy)"] = df_bt_detail["ความแม่นยำ (%) (Accuracy)"].round(2)
-
-            # เรียงอันดับคะแนนจากมากไปน้อย
-            df_bt_detail = df_bt_detail.sort_values(
-                by=["คะแนนน้ำหนัก (Weighted Score)", "คะแนนดิบ (Raw Score)"],
-                ascending=False
-            ).reset_index(drop=True)
-
-            st.success("✅ ประมวลผล Backtest พร้อมดึงเลขท้าย 2 ตัวเรียบร้อย!")
-            st.info(f"วันทดสอบ: {backtest_day} | จำนวนข้อมูล: {len(history)} งวด | Daily Number: {daily_number}")
-
-            # 5. แสดงตารางรายละเอียดรายสูตรพร้อมเลขท้าย 2 ตัว
-            st.subheader("📊 ตารางแสดงผลลัพธ์รายสูตรและเลขท้าย 2 ตัว (Backtest Details)")
-            with st.expander("🔍 คลิกเพื่อดูตารางรายละเอียดทุกสูตร", expanded=True):
-                st.dataframe(df_bt_detail, use_container_width=True, hide_index=True)
-
-            st.markdown("---")
-
-            # 6. สรุปผล TOP 3 อันดับสูตรแม่นยำสูงสุด พร้อมโชว์เลขท้าย 2 ตัว
-            st.subheader("🏆 TOP 3 FORMULA RANKING")
-            for idx, item in df_bt_detail.head(3).iterrows():
-                st.markdown(
-                    f"- **อันดับ {idx + 1}: {item['สูตร (Formula)']}** | "
-                    f"เลขท้าย 2 ตัว: **{item['ท้าย 2 ตัว (Back2)']}** 🏆 | "
-                    f"คะแนนน้ำหนัก: {item['คะแนนน้ำหนัก (Weighted Score)']:.2f} | "
-                    f"ความแม่นยำ: {item['ความแม่นยำ (%) (Accuracy)']:.2f}%"
+                st.dataframe(
+                    df_bt_detail[display_columns],
+                    use_container_width=True,
+                    hide_index=True
                 )
 
-            # 7. กราฟเปรียบเทียบความแม่นยำ
-            st.markdown("---")
-            st.subheader("📈 เปรียบเทียบความแม่นยำแต่ละสูตร")
-            chart_data = df_bt_detail.set_index("สูตร (Formula)")[["ความแม่นยำ (%) (Accuracy)"]]
+            st.divider()
+            st.subheader("🏆 TOP 3 FORMULA — ผล Backtest ย้อนหลัง")
+            top3 = df_bt_detail.head(3)
+            top_cols = st.columns(3)
+            for col, (_, item) in zip(top_cols, top3.iterrows()):
+                with col:
+                    st.metric(
+                        label=f"อันดับ {int(item['อันดับ'])}: {item['สูตร']}",
+                        value=f"{item['Exact Match (%)']:.2f}%",
+                        delta=f"ตรงตำแหน่ง {item['ความแม่นยำตำแหน่ง (%)']:.2f}%"
+                    )
+                    st.markdown(
+                        f"**เลข Back2 งวดถัดไป: {item['เลขท้าย 2 ตัว (Back2)']}**"
+                    )
+                    st.caption(
+                        f"คะแนนคูณน้ำหนัก: {item['คะแนนคูณน้ำหนัก']:.2f}"
+                    )
+
+            st.divider()
+            st.subheader("📈 เปรียบเทียบ Exact Match (%)")
+            chart_data = df_bt_detail.set_index("สูตร")[["Exact Match (%)"]]
             st.bar_chart(chart_data)
+
+            with st.expander("🔎 ดูผลทดสอบย้อนหลังรายงวด", expanded=False):
+                selected_formula = st.selectbox(
+                    "เลือกสูตร:", summary["Formula"].tolist(),
+                    key="bt_detail_formula"
+                )
+                st.dataframe(
+                    details[details["Formula"] == selected_formula],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            with st.expander("📥 ดาวน์โหลดรายงาน Backtest"):
+                st.download_button(
+                    "ดาวน์โหลดสรุป Backtest + เลขทำนาย CSV",
+                    df_bt_detail.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"backtest_{backtest_day}_with_predictions.csv",
+                    mime="text/csv"
+                )
+                st.download_button(
+                    "ดาวน์โหลดผลทดสอบรายงวด CSV",
+                    details.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"backtest_{backtest_day}_details.csv",
+                    mime="text/csv"
+                )
 
 # ==========================================
 # 9. SETTINGS PAGE
