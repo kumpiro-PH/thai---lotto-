@@ -7,7 +7,7 @@ from collections import Counter
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.9 - CSV & Day-of-Week Master",
+    page_title="THAI AI PROFESSIONAL v7.9 - Auto CSV Master",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -30,7 +30,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Auto-Target CSV"
+VERSION = "THAI AI PROFESSIONAL v7.9 MASTER AI - Auto CSV Sync"
 
 # ==========================================
 # 2. SESSION STATE & DAILY NUMBERS INITIALIZATION
@@ -40,12 +40,6 @@ if "history" not in st.session_state:
 
 if "uploaded_csvs" not in st.session_state:
     st.session_state.uploaded_csvs = {}
-
-if "target_number" not in st.session_state:
-    st.session_state.target_number = "423224"
-
-if "current_day" not in st.session_state:
-    st.session_state.current_day = "Monday"
 
 if "ai_settings" not in st.session_state:
     st.session_state.ai_settings = {
@@ -67,7 +61,7 @@ DAILY_NUMBERS = {
 }
 
 # ==========================================
-# 3. ROBUST CSV LOADER FUNCTION
+# 3. CSV LOADER FUNCTION
 # ==========================================
 def load_history_by_day(day_name):
     if day_name in st.session_state.uploaded_csvs:
@@ -314,36 +308,35 @@ if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
     st.caption(f"เวอร์ชัน: {VERSION}")
     
+    # Callback ฟังก์ชันเพื่ออัปเดตเลขฐานอัตโนมัติเมื่อมีการเปลี่ยนวัน
+    def on_day_change():
+        selected_day = st.session_state.selected_day_box
+        history_data = load_history_by_day(selected_day)
+        if history_data:
+            st.session_state.target_number_input = history_data[0]["first"]
+
     col1, col2 = st.columns(2)
     with col1:
         day_choice = st.selectbox(
             "📅 เลือกวันประจำงวด:", 
-            ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+            key="selected_day_box",
+            on_change=on_day_change
         )
         
-        # โหลดประวัติจาก CSV ตามวัน
-        loaded_history = load_history_by_day(day_choice)
-        st.session_state.history = loaded_history
+        st.session_state.history = load_history_by_day(day_choice)
         daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
-        # 🌟 ตรวจสอบการเปลี่ยนวัน เพื่อดึงเลขฐานงวดล่าสุดจาก CSV มาอัปเดตอัตโนมัติ
-        if st.session_state.current_day != day_choice:
-            st.session_state.current_day = day_choice
-            if loaded_history:
-                st.session_state.target_number = loaded_history[0]["first"]
-
     with col2:
-        # หากโหลดประวัติมาได้และยังไม่อัปเดต ให้เซ็ตค่าเริ่มต้น
-        if loaded_history and not st.session_state.target_number:
-            st.session_state.target_number = loaded_history[0]["first"]
-
+        # ดึงเลขงวดล่าสุดตั้งต้นเมื่อโหลดหน้าเว็บครั้งแรก
+        initial_target = st.session_state.history[0]["first"] if st.session_state.history else "423224"
+        
         target_number = st.text_input(
             "📌 เลขฐาน 6 หลักงวดล่าสุด:", 
-            value=st.session_state.target_number, 
+            value=initial_target, 
             max_chars=6,
             key="target_number_input"
         )
-        st.session_state.target_number = target_number
 
     if not st.session_state.history:
         st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV ใน GitHub หรืออัปโหลดผ่านเมนู 'เพิ่ม/จัดการประวัติหวย'")
