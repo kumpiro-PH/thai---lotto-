@@ -1,7 +1,11 @@
+# app.py - THAI AI PROFESSIONAL v7.9 (GitHub API Sync Edition)
 import streamlit as st
 import pandas as pd
 import os
 from collections import Counter
+import base64
+import requests
+from io import StringIO
 
 # ==========================================
 # 0. GLOBAL CONSTANTS
@@ -18,13 +22,13 @@ DAILY_NUMBERS = {
     "Sunday":    "062341",
 }
 
-VERSION = "หวยรัฐบาลไทย by TOMMY v7.9"
+VERSION = "หวยรัฐบาลไทย by TOMMY v7.9 GITHUB SYNC"
 
 # ==========================================
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v7.9 - CSV & Day-of-Week Master",
+    page_title="THAI AI PROFESSIONAL v7.9 - GitHub API Sync",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -72,30 +76,100 @@ if "ai_settings" not in st.session_state:
     }
 
 # ==========================================
-# 3. ROBUST CSV LOADER FUNCTION
+# 3. GITHUB API & ROBUST CSV LOADER/SAVER
 # ==========================================
+def get_csv_filename_by_day(day_name):
+    file_map = {
+        "Monday": "thai_lottery_monday_history.csv",
+        "Tuesday": "thai_lottery_tuesday_history.csv",
+        "Wednesday": "thai_lottery_wednesday_history.csv",
+        "Thursday": "thai_lottery_thursday_history.csv",
+        "Friday": "thai_lottery_friday_history.csv",
+        "Saturday": "thai_lottery_saturday_history.csv",
+        "Sunday": "thai_lottery_sunday_history.csv"
+    }
+    return file_map.get(day_name, "thai_lottery_monday_history.csv")
+
+def load_csv_data_from_github(filename):
+    """อ่าน CSV จาก GitHub API (พร้อม fallback มาอ่านในเครื่อง)"""
+    github_token = st.secrets.get("GITHUB_TOKEN")
+    repo_name = st.secrets.get("GITHUB_REPO")
+    
+    if github_token and repo_name and filename:
+        headers = {
+            "Authorization": f"Bearer {github_token}",
+            "Accept": "application/vnd.github+json"
+        }
+        file_url = f"https://api.github.com/repos/{repo_name}/contents/{filename}"
+        try:
+            res = requests.get(file_url, headers=headers)
+            if res.status_code == 200:
+                file_data = res.json()
+                content_decoded = base64.b64decode(file_data["content"]).decode("utf-8")
+                return pd.read_csv(StringIO(content_decoded), dtype=str).fillna("")
+        except Exception:
+            pass
+            
+    # Fallback อ่านในเครื่อง
+    if os.path.exists(filename):
+        try:
+            return pd.read_csv(filename, dtype=str).fillna("")
+        except Exception:
+            pass
+            
+    return pd.DataFrame(columns=["date_be", "first_prize", "last_2_digits"])
+
+def save_csv_to_github(filename, updated_df, new_date):
+    """บันทึกและซิงก์ข้อมูล CSV ตรงขึ้น GitHub ผ่าน API อัตโนมัติ"""
+    github_token = st.secrets.get("GITHUB_TOKEN")
+    repo_name = st.secrets.get("GITHUB_REPO")
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
+    
+    if not github_token or not repo_name:
+        st.error("ยังไม่ได้ตั้งค่า GITHUB_TOKEN หรือ GITHUB_REPO ใน Streamlit Secrets")
+        return False
+        
+    headers = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github+json"
+    }
+    file_url = f"https://api.github.com/repos/{repo_name}/contents/{filename}"
+    
+    # 1. ดึงไฟล์เดิมจาก GitHub เพื่อเอา SHA
+    res = requests.get(file_url, headers=headers)
+    file_sha = None
+    if res.status_code == 200:
+        file_sha = res.json().get("sha")
+        
+    # 2. แปลงเป็น CSV string และเข้ารหัส Base64
+    csv_string = updated_df.to_csv(index=False, encoding="utf-8-sig")
+    encoded_content = base64.b64encode(csv_string.encode("utf-8")).decode("utf-8")
+    
+    # 3. ส่งคำขอ PUT ไปที่ GitHub API
+    payload = {
+        "message": f"Update {filename} for {new_date} via Streamlit App",
+        "content": encoded_content,
+        "branch": branch
+    }
+    if file_sha:
+        payload["sha"] = file_sha
+        
+    put_res = requests.put(file_url, headers=headers, json=payload)
+    if put_res.status_code in [200, 201]:
+        return True
+    else:
+        st.error(f"❌ GitHub API Error ({put_res.status_code}): {put_res.text}")
+        return False
+
 def load_history_by_day(day_name):
     if day_name in st.session_state.uploaded_csvs:
         df = st.session_state.uploaded_csvs[day_name]
     else:
-        file_map = {
-            "Monday": "thai_lottery_monday_history.csv",
-            "Tuesday": "thai_lottery_tuesday_history.csv",
-            "Wednesday": "thai_lottery_wednesday_history.csv",
-            "Thursday": "thai_lottery_thursday_history.csv",
-            "Friday": "thai_lottery_friday_history.csv",
-            "Saturday": "thai_lottery_saturday_history.csv",
-            "Sunday": "thai_lottery_sunday_history.csv"
-        }
-        filename = file_map.get(day_name)
-        if filename and os.path.exists(filename):
-            try:
-                df = pd.read_csv(filename)
-            except Exception as e:
-                st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ {filename}: {e}")
-                return []
-        else:
-            return []
+        filename = get_csv_filename_by_day(day_name)
+        df = load_csv_data_from_github(filename)
+
+    if df.empty:
+        return []
 
     history_list = []
     for _, row in df.iterrows():
@@ -277,7 +351,6 @@ def analyse_all_15_formulas(target_number, daily_number="-", mode="back2"):
     frequency = sorted(counts.items(), key=lambda item: (-item[1], int(item[0])))
     return rows, frequency, len(combined_digits)
 
-# 📌 เพิ่มเติม: ฟังก์ชัน Backtest ที่ขาดหายไปเพื่อให้เมนู 10 ทำงานได้สมบูรณ์
 def run_backtest_analysis(day_name, history_list, daily_number):
     summary_data = []
     details_data = []
@@ -300,7 +373,6 @@ def run_backtest_analysis(day_name, history_list, daily_number):
             valid += 1
             pred = dynamic_formula_wrapper(func, history_list[index].get("first", ""), "back2", daily_number)
             
-            # คำนวณความแม่นยำ
             pt = calculate_score(pred, nxt)
             classic_score += pt
             current_weight = c_weight if name == "Cross Multiply" else f_weight
@@ -355,7 +427,6 @@ def build_formula_back2_rows(base_number, daily_number, actual_back2=None):
         blend_res = dynamic_formula_wrapper(func, base_number, "back2", daily_number)
         back2_val = blend_res[-2:]
         
-        # ตรวจสอบผลเทียบกับเลขจริงที่ป้อนเข้ามา
         if actual_back2 and back2_val == str(actual_back2).zfill(2):
             back2_display = f"{back2_val} 🏆 (ตัวอย่างสูตรที่ {idx} เข้าเป้า)"
         else:
@@ -384,7 +455,7 @@ menu = st.sidebar.radio("เลือกหน้าเมนู:", [
 # 6. ALL-IN-ONE MASTER REPORT 
 # ==========================================
 if menu == "8. All-in-One Master Report":
-    st.title("🏆 สรุปผลวิเคราะห์หวยรัฐบาลไทยจากสถิติ")
+    st.title("🏆 สรุปผลวิเคราะห์หวยรัฐบาลไทยจากสถิติ (GitHub Sync)")
     st.caption(f"เวอร์ชัน: {VERSION}")
     
     col1, col2 = st.columns(2)
@@ -510,13 +581,14 @@ if menu == "8. All-in-One Master Report":
                     """, unsafe_allow_html=True)
 
 # ==========================================
-# 7. MANAGEMENT HISTORY PAGE
+# 7. MANAGEMENT HISTORY PAGE (GitHub Sync)
 # ==========================================
 elif menu == "1. เพิ่ม/จัดการประวัติหวย":
-    st.title("📚 เพิ่มและจัดการประวัติหวยรายวัน")
+    st.title("📚 เพิ่มและจัดการประวัติหวยรายวัน (GitHub Sync)")
     day_upload = st.selectbox("เลือกวันสำหรับจัดการประวัติ:", DAYS)
+    target_csv = get_csv_filename_by_day(day_upload)
     
-    with st.expander("➕ เพิ่มข้อมูลงวดล่าสุดด้วยตนเอง (ไม่ต้องอัปโหลด CSV)", expanded=True):
+    with st.expander("➕ เพิ่มข้อมูลงวดล่าสุดด้วยตนเอง (ซิงก์ขึ้น GitHub อัตโนมัติ)", expanded=True):
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
             input_date = st.text_input("📅 วันที่ (พ.ศ.) เช่น 01/07/2569", value="01/07/2569")
@@ -525,18 +597,32 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         with col_f3:
             input_back2 = st.text_input("🔢 เลขท้าย 2 ตัว", max_chars=2, value="")
             
-        if st.button("💾 บันทึกข้อมูลงวดใหม่เข้าสู่ระบบ"):
+        if st.button("💾 บันทึกและซิงก์ขึ้น GitHub"):
             if len(input_first) == 6 and input_first.isdigit() and len(input_back2) == 2 and input_back2.isdigit():
                 current_list = load_history_by_day(day_upload)
                 new_entry = {
-                    "date": input_date,
-                    "day": day_upload,
-                    "first": input_first,
-                    "back2": input_back2
+                    "date_be": input_date.strip(),
+                    "first_prize": input_first.strip(),
+                    "last_2_digits": input_back2.strip()
                 }
                 current_list.insert(0, new_entry)
-                st.session_state.uploaded_csvs[day_upload] = pd.DataFrame(current_list)
-                st.success(f"✅ เพิ่มข้อมูลงวด {input_first} ของวัน {day_upload} สำเร็จเรียบร้อย!")
+                
+                # แปลงเป็น DataFrame และบันทึกผ่าน GitHub API
+                updated_df = pd.DataFrame(current_list)
+                # จัดเรียงชื่อคอลัมน์ให้ตรงมาตรฐาน
+                expected_cols = ["date_be", "first_prize", "last_2_digits"]
+                for c in expected_cols:
+                    if c not in updated_df.columns:
+                        updated_df[c] = ""
+                updated_df = updated_df[expected_cols]
+
+                success = save_csv_to_github(target_csv, updated_df, input_date.strip())
+                if success:
+                    st.session_state.uploaded_csvs[day_upload] = updated_df
+                    st.success(f"✅ บันทึกและซิงก์ข้อมูลลง GitHub (`{target_csv}`) สำเร็จเรียบร้อย!")
+                    st.rerun()
+                else:
+                    st.error("❌ เกิดข้อผิดพลาดในการเชื่อมต่อ GitHub API")
             else:
                 st.error("❌ กรุณากรอกรางวัลที่ 1 ให้ครบ 6 หลัก และเลขท้าย 2 ตัวให้ครบ 2 หลักด้วยตัวเลขเท่านั้น")
 
@@ -545,16 +631,19 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
     uploaded_file = st.file_uploader(f"📂 หรืออัปโหลดไฟล์ CSV สำหรับวัน {day_upload}", type=["csv"])
     if uploaded_file is not None:
         try:
-            df_up = pd.read_csv(uploaded_file)
-            st.session_state.uploaded_csvs[day_upload] = df_up
-            st.success(f"✅ อัปโหลดไฟล์ CSV ของวัน {day_upload} สำเร็จ!")
+            df_up = pd.read_csv(uploaded_file, dtype=str).fillna("")
+            success = save_csv_to_github(target_csv, df_up, "Uploaded CSV")
+            if success:
+                st.session_state.uploaded_csvs[day_upload] = df_up
+                st.success(f"✅ อัปโหลดและซิงก์ไฟล์ CSV ของวัน {day_upload} ขึ้น GitHub สำเร็จ!")
+                st.rerun()
         except Exception as e:
-            st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
+            st.error(f"❌ อ่านหรือซิงก์ไฟล์ไม่สำเร็จ: {e}")
 
     current_history = load_history_by_day(day_upload)
     if current_history:
         st.subheader(f"📋 ข้อมูลประวัติปัจจุบันของวัน: {day_upload}")
-        st.dataframe(pd.DataFrame(current_history), use_container_width=True)
+        st.dataframe(pd.DataFrame(current_history), use_container_width=True, hide_index=True)
     else:
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
