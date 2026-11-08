@@ -1,4 +1,4 @@
-# app.py - THAI AI PROFESSIONAL v7.9 (GitHub API Sync Edition)
+# app.py - THAI AI PROFESSIONAL v7.9 (GitHub API Sync & Append Fix)
 import streamlit as st
 import pandas as pd
 import os
@@ -91,9 +91,11 @@ def get_csv_filename_by_day(day_name):
     return file_map.get(day_name, "thai_lottery_monday_history.csv")
 
 def load_csv_data_from_github(filename):
-    """อ่าน CSV จาก GitHub API (พร้อม fallback มาอ่านในเครื่อง)"""
+    """อ่าน CSV จาก GitHub API แบบสมบูรณ์"""
     github_token = st.secrets.get("GITHUB_TOKEN")
     repo_name = st.secrets.get("GITHUB_REPO")
+    
+    expected_cols = ["date_be", "first_prize", "last_2_digits"]
     
     if github_token and repo_name and filename:
         headers = {
@@ -106,18 +108,25 @@ def load_csv_data_from_github(filename):
             if res.status_code == 200:
                 file_data = res.json()
                 content_decoded = base64.b64decode(file_data["content"]).decode("utf-8")
-                return pd.read_csv(StringIO(content_decoded), dtype=str).fillna("")
+                df = pd.read_csv(StringIO(content_decoded), dtype=str).fillna("")
+                for col in expected_cols:
+                    if col not in df.columns:
+                        df[col] = ""
+                return df[expected_cols]
         except Exception:
             pass
             
-    # Fallback อ่านในเครื่อง
     if os.path.exists(filename):
         try:
-            return pd.read_csv(filename, dtype=str).fillna("")
+            df = pd.read_csv(filename, dtype=str).fillna("")
+            for col in expected_cols:
+                if col not in df.columns:
+                    df[col] = ""
+            return df[expected_cols]
         except Exception:
             pass
             
-    return pd.DataFrame(columns=["date_be", "first_prize", "last_2_digits"])
+    return pd.DataFrame(columns=expected_cols)
 
 def save_csv_to_github(filename, updated_df, new_date):
     """บันทึกและซิงก์ข้อมูล CSV ตรงขึ้น GitHub ผ่าน API อัตโนมัติ"""
@@ -135,17 +144,14 @@ def save_csv_to_github(filename, updated_df, new_date):
     }
     file_url = f"https://api.github.com/repos/{repo_name}/contents/{filename}"
     
-    # 1. ดึงไฟล์เดิมจาก GitHub เพื่อเอา SHA
     res = requests.get(file_url, headers=headers)
     file_sha = None
     if res.status_code == 200:
         file_sha = res.json().get("sha")
         
-    # 2. แปลงเป็น CSV string และเข้ารหัส Base64
     csv_string = updated_df.to_csv(index=False, encoding="utf-8-sig")
     encoded_content = base64.b64encode(csv_string.encode("utf-8")).decode("utf-8")
     
-    # 3. ส่งคำขอ PUT ไปที่ GitHub API
     payload = {
         "message": f"Update {filename} for {new_date} via Streamlit App",
         "content": encoded_content,
@@ -162,28 +168,31 @@ def save_csv_to_github(filename, updated_df, new_date):
         return False
 
 def load_history_by_day(day_name):
-    if day_name in st.session_state.uploaded_csvs:
-        df = st.session_state.uploaded_csvs[day_name]
-    else:
-        filename = get_csv_filename_by_day(day_name)
-        df = load_csv_data_from_github(filename)
+    filename = get_csv_filename_by_day(day_name)
+    df = load_csv_data_from_github(filename)
 
     if df.empty:
         return []
 
     history_list = []
     for _, row in df.iterrows():
-        raw_first = str(row.get("first_prize", ""))
+        raw_date = str(row.get("date_be", "")).strip()
+        raw_first = str(row.get("first_prize", "")).strip()
+        raw_back2 = str(row.get("last_2_digits", "")).strip()
+
+        if not raw_date or not raw_first:
+            continue
+
         try:
             first_val = str(int(float(raw_first))).zfill(6)
         except:
             first_val = "000000"
 
         history_list.append({
-            "date": str(row.get("date_be", "")),
+            "date": raw_date,
             "day": day_name,
             "first": first_val,
-            "back2": str(row.get("last_2_digits", "")).zfill(2)
+            "back2": raw_back2.zfill(2)
         })
     return history_list
 
@@ -487,7 +496,7 @@ if menu == "8. All-in-One Master Report":
         st.session_state.target_number = target_number
 
     if not st.session_state.history:
-        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV หรืออัปโหลดผ่านเมนู 'เพิ่ม/จัดการประวัติหวย'")
+        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV หรือเพิ่มข้อมูลผ่านเมนู 'เพิ่ม/จัดการประวัติหวย'")
     else:
         if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
             if len(target_number) != 6 or not target_number.isdigit():
@@ -599,26 +608,23 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
             
         if st.button("💾 บันทึกและซิงก์ขึ้น GitHub"):
             if len(input_first) == 6 and input_first.isdigit() and len(input_back2) == 2 and input_back2.isdigit():
-                current_list = load_history_by_day(day_upload)
-                new_entry = {
+                # โหลดข้อมูลเก่าจาก GitHub ตรง ๆ เพื่อเอาข้อมูลทั้งหมดมาต่อเพิ่ม
+                existing_df = load_csv_data_from_github(target_csv)
+                
+                new_row = pd.DataFrame([{
                     "date_be": input_date.strip(),
                     "first_prize": input_first.strip(),
                     "last_2_digits": input_back2.strip()
-                }
-                current_list.insert(0, new_entry)
+                }])
                 
-                # แปลงเป็น DataFrame และบันทึกผ่าน GitHub API
-                updated_df = pd.DataFrame(current_list)
-                # จัดเรียงชื่อคอลัมน์ให้ตรงมาตรฐาน
+                updated_df = pd.concat([new_row, existing_df], ignore_index=True)
+                updated_df = updated_df.drop_duplicates(subset=["date_be", "first_prize"], keep="first")
+                
                 expected_cols = ["date_be", "first_prize", "last_2_digits"]
-                for c in expected_cols:
-                    if c not in updated_df.columns:
-                        updated_df[c] = ""
                 updated_df = updated_df[expected_cols]
 
                 success = save_csv_to_github(target_csv, updated_df, input_date.strip())
                 if success:
-                    st.session_state.uploaded_csvs[day_upload] = updated_df
                     st.success(f"✅ บันทึกและซิงก์ข้อมูลลง GitHub (`{target_csv}`) สำเร็จเรียบร้อย!")
                     st.rerun()
                 else:
@@ -626,23 +632,9 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
             else:
                 st.error("❌ กรุณากรอกรางวัลที่ 1 ให้ครบ 6 หลัก และเลขท้าย 2 ตัวให้ครบ 2 หลักด้วยตัวเลขเท่านั้น")
 
-    st.markdown("---")
-
-    uploaded_file = st.file_uploader(f"📂 หรืออัปโหลดไฟล์ CSV สำหรับวัน {day_upload}", type=["csv"])
-    if uploaded_file is not None:
-        try:
-            df_up = pd.read_csv(uploaded_file, dtype=str).fillna("")
-            success = save_csv_to_github(target_csv, df_up, "Uploaded CSV")
-            if success:
-                st.session_state.uploaded_csvs[day_upload] = df_up
-                st.success(f"✅ อัปโหลดและซิงก์ไฟล์ CSV ของวัน {day_upload} ขึ้น GitHub สำเร็จ!")
-                st.rerun()
-        except Exception as e:
-            st.error(f"❌ อ่านหรือซิงก์ไฟล์ไม่สำเร็จ: {e}")
-
     current_history = load_history_by_day(day_upload)
     if current_history:
-        st.subheader(f"📋 ข้อมูลประวัติปัจจุบันของวัน: {day_upload}")
+        st.subheader(f"📋 ข้อมูลประวัติปัจจุบันของวัน: {day_upload} (รวม {len(current_history)} งวด)")
         st.dataframe(pd.DataFrame(current_history), use_container_width=True, hide_index=True)
     else:
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
@@ -716,7 +708,7 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                     st.metric(
                         label=f"อันดับ {int(item['อันดับ'])}: {item['สูตร']}",
                         value=f"{item['Exact Match (%)']:.2f}%",
-                        delta=f"ความแม่นยำ {item['ความแม่นยำตำแหน่ง (%)']:.2f}%"
+                        delta=f"ความแม่นยำพิมพ์ {item['ความแม่นยำตำแหน่ง (%)']:.2f}%"
                     )
                     st.markdown(f"**เลข Back2 งวดถัดไป: {item['เลขท้าย 2 ตัว (Back2)']}**")
                     st.caption(f"คะแนนคูณน้ำหนัก: {item['คะแนนคูณน้ำหนัก']:.2f}")
