@@ -18,7 +18,7 @@ DAILY_NUMBERS = {
     "Wednesday": "257308",
     "Thursday":  "176904",
     "Friday":    "730259",
-    "Saturday":  "895260",
+    "Saturday":  "384201",
     "Sunday":    "062341",
 }
 
