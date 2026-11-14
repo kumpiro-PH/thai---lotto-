@@ -1,4 +1,4 @@
-# app.py - THAI AI PROFESSIONAL v7.9 (GitHub API Sync & Append Fix)
+# app.py - THAI AI PROFESSIONAL v7.9 (GitHub API Sync & Append Fix + Editable Daily Number)
 import streamlit as st
 import pandas as pd
 import os
@@ -65,6 +65,15 @@ if "target_number" not in st.session_state:
 
 if "current_day" not in st.session_state:
     st.session_state.current_day = "Monday"
+
+if "daily_number" not in st.session_state:
+    st.session_state.daily_number = DAILY_NUMBERS["Monday"]
+
+if "bt_current_day" not in st.session_state:
+    st.session_state.bt_current_day = "Monday"
+
+if "bt_daily_number" not in st.session_state:
+    st.session_state.bt_daily_number = DAILY_NUMBERS["Monday"]
 
 if "ai_settings" not in st.session_state:
     st.session_state.ai_settings = {
@@ -467,7 +476,7 @@ if menu == "8. All-in-One Master Report":
     st.title("🏆 สรุปผลวิเคราะห์หวยรัฐบาลไทยจากสถิติ (GitHub Sync)")
     st.caption(f"เวอร์ชัน: {VERSION}")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         day_choice = st.selectbox(
             "📅 เลือกวันประจำงวด:", 
@@ -476,10 +485,10 @@ if menu == "8. All-in-One Master Report":
         
         loaded_history = load_history_by_day(day_choice)
         st.session_state.history = loaded_history
-        daily_number = DAILY_NUMBERS.get(day_choice, "462793")
 
         if st.session_state.current_day != day_choice:
             st.session_state.current_day = day_choice
+            st.session_state.daily_number = DAILY_NUMBERS.get(day_choice, "462793")
             if loaded_history:
                 st.session_state.target_number = loaded_history[0]["first"]
 
@@ -495,16 +504,27 @@ if menu == "8. All-in-One Master Report":
         )
         st.session_state.target_number = target_number
 
+    with col3:
+        daily_number = st.text_input(
+            "🔑 เลขประจำวัน (แก้ไขได้):", 
+            value=st.session_state.daily_number, 
+            max_chars=10,
+            key="daily_number_input"
+        )
+        st.session_state.daily_number = daily_number
+
     if not st.session_state.history:
         st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV หรือเพิ่มข้อมูลผ่านเมนู 'เพิ่ม/จัดการประวัติหวย'")
     else:
         if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
             if len(target_number) != 6 or not target_number.isdigit():
                 st.error("❌ กรุณากรอกเลขฐาน 6 หลักให้ถูกต้อง")
+            elif not daily_number.strip().isdigit():
+                st.error("❌ กรุณากรอกเลขประจำวันเป็นตัวเลขให้ถูกต้อง")
             else:
                 frequency_rows, frequency, frequency_total = analyse_all_15_formulas(
                     target_number=target_number,
-                    daily_number=daily_number,
+                    daily_number=daily_number.strip(),
                     mode="back2"
                 )
 
@@ -515,7 +535,7 @@ if menu == "8. All-in-One Master Report":
 
                 st.markdown(f"""
                     <div style="background-color: #f8fafc; padding: 10px 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-weight: 600; color: #1e293b;">
-                        วัน: {day_choice}   |   เลขฐาน: {target_number}   |   Daily Number: {daily_number}   |   จำนวนสูตร: 15   |   จำนวนหลัก: {frequency_total}
+                        วัน: {day_choice}   |   เลขฐาน: {target_number}   |   Daily Number: {daily_number.strip()}   |   จำนวนสูตร: 15   |   จำนวนหลัก: {frequency_total}
                     </div>
                 """, unsafe_allow_html=True)
 
@@ -589,6 +609,9 @@ if menu == "8. All-in-One Master Report":
                         </div>
                     """, unsafe_allow_html=True)
 
+                with st.expander("📋 ดูตารางผลลัพธ์รายสูตร (15 สูตร)", expanded=False):
+                    st.dataframe(pd.DataFrame(frequency_rows), use_container_width=True, hide_index=True)
+
 # ==========================================
 # 7. MANAGEMENT HISTORY PAGE (GitHub Sync)
 # ==========================================
@@ -608,7 +631,6 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
             
         if st.button("💾 บันทึกและซิงก์ขึ้น GitHub"):
             if len(input_first) == 6 and input_first.isdigit() and len(input_back2) == 2 and input_back2.isdigit():
-                # โหลดข้อมูลเก่าจาก GitHub ตรง ๆ เพื่อเอาข้อมูลทั้งหมดมาต่อเพิ่ม
                 existing_df = load_csv_data_from_github(target_csv)
                 
                 new_row = pd.DataFrame([{
@@ -646,27 +668,44 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
     st.title("📈 ระบบทดสอบย้อนหลัง (Backtest Engine)")
     st.caption("แสดงผล Backtest แยกรายสูตร พร้อมเลขท้าย 2 ตัวที่คำนวณจากเลขฐานล่าสุด")
 
-    backtest_day = st.selectbox("📅 เลือกวันสำหรับรัน Backtest:", DAYS, key="bt_day")
-    daily_number = DAILY_NUMBERS[backtest_day]
+    bt_col1, bt_col2, bt_col3 = st.columns(3)
+    with bt_col1:
+        backtest_day = st.selectbox("📅 เลือกวันสำหรับรัน Backtest:", DAYS, key="bt_day")
+        if st.session_state.bt_current_day != backtest_day:
+            st.session_state.bt_current_day = backtest_day
+            st.session_state.bt_daily_number = DAILY_NUMBERS[backtest_day]
+
+    with bt_col2:
+        base_number = st.text_input(
+            "📌 เลขฐาน 6 หลักงวดล่าสุด:",
+            value=st.session_state.get("target_number", "423224"),
+            max_chars=6,
+            key="bt_target_number"
+        )
+
+    with bt_col3:
+        daily_number = st.text_input(
+            "🔑 เลขประจำวัน (แก้ไขได้):",
+            value=st.session_state.bt_daily_number,
+            max_chars=10,
+            key="bt_daily_number_input"
+        )
+        st.session_state.bt_daily_number = daily_number
+
     history = load_history_by_day(backtest_day)
 
-    base_number = st.text_input(
-        "📌 เลขฐาน 6 หลักงวดล่าสุดสำหรับคำนวณเลขงวดถัดไป:",
-        value=st.session_state.get("target_number", "423224"),
-        max_chars=6,
-        key="bt_target_number"
-    )
-
-    st.info(f"วันทดสอบ: {backtest_day} | ประวัติ: {len(history)} งวด | Daily Number: {daily_number}")
+    st.info(f"วันทดสอบ: {backtest_day} | ประวัติ: {len(history)} งวด | Daily Number: {daily_number.strip()}")
 
     if st.button("🚀 รันผล Backtest ทั้งหมด", type="primary", use_container_width=True):
         if len(base_number) != 6 or not base_number.isdigit():
             st.error("กรุณากรอกเลขฐานให้ครบ 6 หลัก")
+        elif not daily_number.strip().isdigit():
+            st.error("กรุณากรอกเลขประจำวันเป็นตัวเลขให้ถูกต้อง")
         elif len(history) < 2:
             st.warning(f"ข้อมูล {backtest_day} ไม่เพียงพอ ต้องมีอย่างน้อย 2 งวด")
         else:
-            summary, details, test_count = run_backtest_analysis(backtest_day, history, daily_number)
-            prediction_df = build_formula_back2_rows(base_number, daily_number)
+            summary, details, test_count = run_backtest_analysis(backtest_day, history, daily_number.strip())
+            prediction_df = build_formula_back2_rows(base_number, daily_number.strip())
 
             df_bt_detail = summary.merge(prediction_df, on="Formula", how="left")
             df_bt_detail = df_bt_detail.rename(columns={
