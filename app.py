@@ -1,7 +1,8 @@
-# app.py - THAI AI PROFESSIONAL v7.9 (Complete & Optimized Edition)
+# app.py - THAI AI PROFESSIONAL v8.0 (AI Ensemble & Full Fix Edition)
 import streamlit as st
 import pandas as pd
 import os
+import re
 from datetime import datetime
 from collections import Counter
 import base64
@@ -23,13 +24,13 @@ DAILY_NUMBERS = {
     "Sunday":    "062341",
 }
 
-VERSION = "หวยรัฐบาลไทย by TOMMY v8.0 FULL AI ENGINE"
+VERSION = "หวยรัฐบาลไทย by TOMMY v8.0 AI ENSEMBLE"
 
 # ==========================================
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
 # ==========================================
 st.set_page_config(
-    page_title="THAI AI PROFESSIONAL v8.0 - Full AI Engine",
+    page_title="THAI AI PROFESSIONAL v8.0 - AI Ensemble",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -58,11 +59,8 @@ st.markdown("""
 if "history" not in st.session_state:
     st.session_state.history = []
 
-if "uploaded_csvs" not in st.session_state:
-    st.session_state.uploaded_csvs = {}
-
 if "target_number" not in st.session_state:
-    st.session_state.target_number = "423224"
+    st.session_state.target_number = ""
 
 if "current_day" not in st.session_state:
     st.session_state.current_day = "Monday"
@@ -86,8 +84,39 @@ if "ai_settings" not in st.session_state:
     }
 
 # ==========================================
-# 3. GITHUB API & ROBUST CSV LOADER/SAVER
+# 3. DATE PARSER & GITHUB API CSV LOADER/SAVER
 # ==========================================
+def parse_be_date(date_str):
+    """แปลงวันที่ พ.ศ. (dd/mm/yyyy) เป็น datetime เพื่อเรียงลำดับและหาวันประจำสัปดาห์จริง"""
+    try:
+        parts = str(date_str).strip().split("/")
+        if len(parts) == 3:
+            d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
+            if y > 2400:
+                y -= 543
+            return datetime(y, m, d)
+    except Exception:
+        pass
+    return None
+
+def get_actual_day_and_daily_num(date_str, fallback_day):
+    """คืนค่า (ชื่อวันภาษาอังกฤษ, เลขประจำวันของวันนั้นจริง)"""
+    dt = parse_be_date(date_str)
+    if dt:
+        actual_day = DAYS[dt.weekday()]
+        return actual_day, DAILY_NUMBERS.get(actual_day, DAILY_NUMBERS[fallback_day])
+    return fallback_day, DAILY_NUMBERS.get(fallback_day, "462793")
+
+def clean_prize_digits(raw_val, length=6):
+    """รักษาเลข 0 นำหน้า 100% ป้องกันปัญหา float/int ตัดเลขศูนย์"""
+    s = str(raw_val).strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    digits = re.sub(r"\D", "", s)
+    if not digits:
+        return ""
+    return digits.zfill(length)[-length:]
+
 def get_csv_filename_by_day(day_name):
     file_map = {
         "Monday": "thai_lottery_monday_history.csv",
@@ -100,41 +129,10 @@ def get_csv_filename_by_day(day_name):
     }
     return file_map.get(day_name, "thai_lottery_monday_history.csv")
 
-def get_secret(name, default=None):
-    """อ่าน Streamlit Secrets แบบปลอดภัยเมื่อยังไม่ได้ตั้งค่า"""
-    try:
-        return st.secrets.get(name, default)
-    except Exception:
-        return default
-
-
-def normalize_lottery_number(value, length):
-    """รักษาเลขศูนย์นำหน้าและไม่แปลงผ่าน float/int"""
-    digits = safe_digits(value)
-    if not digits:
-        return ""
-    return digits.zfill(length)[-length:]
-
-
-def parse_be_date(value):
-    """แปลงวันที่ พ.ศ. หรือ ค.ศ. เป็นคีย์เรียงลำดับ; วันที่อ่านไม่ได้ให้ None"""
-    value = str(value or "").strip()
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y"):
-        try:
-            dt = datetime.strptime(value, fmt)
-            year = dt.year - 543 if dt.year > 2400 else dt.year
-            return (year, dt.month, dt.day)
-        except (ValueError, OverflowError):
-            continue
-    return None
-
-
 @st.cache_data(ttl=60, show_spinner=False)
 def load_csv_data_from_github(filename):
-    """อ่าน CSV จาก GitHub API แบบสมบูรณ์ พร้อมระบบ Cache 60 วินาที"""
-    github_token = get_secret("GITHUB_TOKEN")
-    repo_name = get_secret("GITHUB_REPO")
-    
+    github_token = st.secrets.get("GITHUB_TOKEN")
+    repo_name = st.secrets.get("GITHUB_REPO")
     expected_cols = ["date_be", "first_prize", "last_2_digits"]
     
     if github_token and repo_name and filename:
@@ -147,7 +145,7 @@ def load_csv_data_from_github(filename):
             res = requests.get(file_url, headers=headers, timeout=10)
             if res.status_code == 200:
                 file_data = res.json()
-                content_decoded = base64.b64decode(file_data["content"]).decode("utf-8")
+                content_decoded = base64.b64decode(file_data["content"]).decode("utf-8-sig")
                 df = pd.read_csv(StringIO(content_decoded), dtype=str).fillna("")
                 for col in expected_cols:
                     if col not in df.columns:
@@ -169,10 +167,9 @@ def load_csv_data_from_github(filename):
     return pd.DataFrame(columns=expected_cols)
 
 def save_csv_to_github(filename, updated_df, new_date):
-    """บันทึกและซิงก์ข้อมูล CSV ตรงขึ้น GitHub ผ่าน API อัตโนมัติ"""
-    github_token = get_secret("GITHUB_TOKEN")
-    repo_name = get_secret("GITHUB_REPO")
-    branch = get_secret("GITHUB_BRANCH", "main")
+    github_token = st.secrets.get("GITHUB_TOKEN")
+    repo_name = st.secrets.get("GITHUB_REPO")
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
     
     if not github_token or not repo_name:
         st.error("❌ ยังไม่ได้ตั้งค่า GITHUB_TOKEN หรือ GITHUB_REPO ใน Streamlit Secrets")
@@ -201,7 +198,7 @@ def save_csv_to_github(filename, updated_df, new_date):
             
         put_res = requests.put(file_url, headers=headers, json=payload, timeout=10)
         if put_res.status_code in [200, 201]:
-            load_csv_data_from_github.clear() # ล้าง Cache เพื่อโหลดข้อมูลใหม่ทันที
+            load_csv_data_from_github.clear()
             return True
         else:
             st.error(f"❌ GitHub API Error ({put_res.status_code}): {put_res.text}")
@@ -213,33 +210,38 @@ def save_csv_to_github(filename, updated_df, new_date):
 def load_history_by_day(day_name):
     filename = get_csv_filename_by_day(day_name)
     df = load_csv_data_from_github(filename)
+
     if df.empty:
         return []
 
     history_list = []
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
         raw_date = str(row.get("date_be", "")).strip()
-        first_val = normalize_lottery_number(row.get("first_prize", ""), 6)
-        back2_val = normalize_lottery_number(row.get("last_2_digits", ""), 2)
-        if not raw_date or len(first_val) != 6 or len(back2_val) != 2:
+        first_val = clean_prize_digits(row.get("first_prize", ""), 6)
+        back2_val = clean_prize_digits(row.get("last_2_digits", ""), 2)
+
+        if not raw_date or not first_val:
             continue
+
+        dt_obj = parse_be_date(raw_date)
+        actual_day, actual_daily_num = get_actual_day_and_daily_num(raw_date, day_name)
+
         history_list.append({
             "date": raw_date,
-            "day": day_name,
+            "dt": dt_obj if dt_obj else datetime(1900, 1, 1),
+            "orig_idx": idx,
+            "day": actual_day,
+            "daily_num": actual_daily_num,
             "first": first_val,
-            "back2": back2_val,
-            "_date_key": parse_be_date(raw_date),
+            "back2": back2_val
         })
-
-    # เรียงใหม่ไปเก่าโดยใช้วันที่จริง; ถ้าแปลงวันที่ไม่ได้ให้คงลำดับ CSV เดิม
-    if history_list and all(item["_date_key"] is not None for item in history_list):
-        history_list.sort(key=lambda item: item["_date_key"], reverse=True)
-    for item in history_list:
-        item.pop("_date_key", None)
+        
+    # เรียงลำดับจาก "ใหม่ล่าสุด -> เก่าสุด" อย่างแม่นยำตามวันที่ พ.ศ.
+    history_list.sort(key=lambda x: (x["dt"], -x["orig_idx"]), reverse=True)
     return history_list
 
 # ==========================================
-# 4. HELPER FUNCTIONS & FORMULAS
+# 4. HELPER FUNCTIONS & 16 FORMULAS
 # ==========================================
 def safe_int(value, default=0):
     try:
@@ -384,105 +386,170 @@ def dynamic_formula_wrapper(func, target, mode, daily_number="-"):
 
     return safe_digits(result).zfill(length)[-length:]
 
-FORMULAS_15 = [(name, func) for name, func in formulas if name != "Cross Multiply"]
+def run_backtest_analysis(day_name, history_list, override_daily_number=None, use_each_draw_daily=True):
+    """
+    รัน Backtest โดยเรียงลำดับจาก เก่า -> ใหม่ ตามวันที่จริง
+    และใช้ Daily Number ประจำวันของงวดนั้นๆ (หรือใช้ค่าที่กำหนดเองหากเลือกโหมดทดสอบค่าเดียว)
+    """
+    chrono_history = sorted(history_list, key=lambda x: (x["dt"], -x["orig_idx"]))
+    summary_data = []
+    details_data = []
+    
+    f_weight = st.session_state.ai_settings.get("formula_weight", 1.0)
+    c_weight = st.session_state.ai_settings.get("cross_weight", 0.9)
 
-def analyse_all_15_formulas(target_number, daily_number="-", mode="back2"):
+    valid_tests = 0
+    for name, func in formulas:
+        classic_score = 0
+        weighted_score = 0
+        exact_hits = 0
+        correct_positions = 0
+        any_digit_hits = 0
+        valid = 0
+
+        for index in range(len(chrono_history) - 1):
+            nxt_draw = chrono_history[index + 1]
+            nxt = nxt_draw.get("back2", "")
+            if not nxt:
+                continue
+            valid += 1
+            
+            # เลือกใช้เลขประจำวันของงวดที่กำลังทดสอบจริง หรือเลขที่ผู้ใช้ระบุ
+            test_daily = nxt_draw.get("daily_num", override_daily_number) if use_each_draw_daily else override_daily_number
+            
+            pred = dynamic_formula_wrapper(func, chrono_history[index].get("first", ""), "back2", test_daily)
+            
+            pt = calculate_score(pred, nxt)
+            classic_score += pt
+            current_weight = c_weight if name == "Cross Multiply" else f_weight
+            weighted_score += (pt * (index + 1)) * current_weight
+
+            if pred == nxt:
+                exact_hits += 1
+            
+            pos_match = sum(1 for p_ch, a_ch in zip(pred, nxt) if p_ch == a_ch)
+            correct_positions += pos_match
+            
+            hit_count, _ = calculate_digit_accuracy(pred, nxt)
+            any_digit_hits += hit_count
+
+            details_data.append({
+                "Formula": name,
+                "Date": nxt_draw.get("date", ""),
+                "Day": nxt_draw.get("day", ""),
+                "Daily Used": test_daily,
+                "Base First": chrono_history[index].get("first", ""),
+                "Prediction": pred,
+                "Actual": nxt,
+                "Result": "✅ ตรงเป๊ะ" if pred == nxt else ("🟡 เข้าตัว" if hit_count > 0 else "❌ พลาด"),
+                "Score": pt
+            })
+
+        percent = ((classic_score / (valid * 100)) * 100) if valid else 0
+        exact_pct = ((exact_hits / valid) * 100) if valid else 0
+        pos_acc = ((correct_positions / (valid * 2)) * 100) if valid else 0
+
+        summary_data.append({
+            "Rank": 0,
+            "Formula": name,
+            "Tests": valid,
+            "Exact Hits": exact_hits,
+            "Exact Match (%)": exact_pct,
+            "Correct Positions": correct_positions,
+            "Position Accuracy (%)": pos_acc,
+            "Any Digit Hits": any_digit_hits,
+            "Any Digit Rate (%)": percent,
+            "Raw Score": classic_score,
+            "Weight": c_weight if name == "Cross Multiply" else f_weight,
+            "Weighted Score": weighted_score
+        })
+        valid_tests = max(valid_tests, valid)
+
+    df_sum = pd.DataFrame(summary_data)
+    if not df_sum.empty:
+        df_sum = df_sum.sort_values(by=["Weighted Score", "Raw Score", "Exact Match (%)"], ascending=False).reset_index(drop=True)
+        df_sum["Rank"] = df_sum.index + 1
+
+    df_det = pd.DataFrame(details_data)
+    return df_sum, df_det, valid_tests
+
+def analyse_ai_ensemble(target_number, daily_number, history_list, day_name, mode="back2"):
+    """
+    ระบบ AI Ensemble เต็มรูปแบบ:
+    นำค่าน้ำหนักทุกตัว (formula_weight, cross_weight, daily_weight, echo_weight, recovery_weight)
+    และคะแนนผลงานย้อนหลังรายสูตร มาคำนวณคะแนนรวมของตัวเลข 0-9
+    """
+    settings = st.session_state.ai_settings
+    f_weight = settings.get("formula_weight", 1.0)
+    c_weight = settings.get("cross_weight", 0.9)
+    d_weight = settings.get("daily_weight", 1.5)
+    e_weight = settings.get("echo_weight", 0.7)
+    r_weight = settings.get("recovery_weight", 0.6)
+
+    # 1. ประเมินประสิทธิภาพย้อนหลังรายสูตร (ถ้ามีประวัติอย่างน้อย 2 งวด)
+    perf_multiplier = {name: 1.0 for name, _ in formulas}
+    if len(history_list) >= 2:
+        df_bt, _, _ = run_backtest_analysis(day_name, history_list, daily_number, use_each_draw_daily=True)
+        if not df_bt.empty and df_bt["Weighted Score"].max() > 0:
+            max_ws = df_bt["Weighted Score"].max()
+            for _, r in df_bt.iterrows():
+                # คูณโบนัสประสิทธิภาพย้อนหลัง 0.5 ถึง 1.5 เท่า
+                perf_multiplier[r["Formula"]] = 0.5 + (r["Weighted Score"] / max_ws)
+
     rows = []
-    combined_digits = []
+    digit_scores = {str(d): 0.0 for d in range(10)}
+    raw_digit_counts = Counter()
 
-    for name, func in FORMULAS_15:
+    # 2. คำนวณคะแนนทั้ง 16 สูตร (รวม Cross Multiply)
+    for name, func in formulas:
         raw_result = dynamic_formula_wrapper(func, target_number, mode, "-")
         blended_result = dynamic_formula_wrapper(func, target_number, mode, daily_number)
+        
+        base_w = c_weight if name == "Cross Multiply" else f_weight
+        hist_mult = perf_multiplier.get(name, 1.0)
+        
+        # คะแนนจากเลขดิบ (น้ำหนักพื้นฐาน * ประสิทธิภาพสูตร)
+        for ch in safe_digits(raw_result):
+            digit_scores[ch] += (1.0 * base_w * hist_mult)
+            
+        # คะแนนจากเลขผสมวัน (คูณด้วย daily_weight จริง!)
+        for ch in safe_digits(blended_result):
+            digit_scores[ch] += (1.0 * base_w * d_weight * hist_mult)
+            raw_digit_counts[ch] += 1
 
         rows.append({
             "สูตร": name,
+            "น้ำหนักสูตร": round(base_w * hist_mult, 2),
             "เลขดิบ": raw_result,
             "เลขผสมวัน": blended_result,
             "ท้าย 2 ตัว": blended_result[-2:],
         })
-        combined_digits.extend(safe_digits(blended_result))
 
-    raw_counts = Counter(combined_digits)
-    counts = {str(digit): raw_counts.get(str(digit), 0) for digit in range(10)}
+    # 3. คำนวณ Echo Weight (เลขสะท้อนจากงวดล่าสุด: รางวัลที่ 1 และ 2 ตัวล่าง)
+    if history_list:
+        latest_draw = history_list[0]
+        echo_digits = set(safe_digits(latest_draw.get("first", "")) + safe_digits(latest_draw.get("back2", "")))
+        for ch in echo_digits:
+            if ch in digit_scores:
+                digit_scores[ch] += e_weight
 
-    frequency = sorted(counts.items(), key=lambda item: (-item[1], int(item[0])))
-    return rows, frequency, len(combined_digits)
+    # 4. คำนวณ Recovery Weight (เลขดับ/เลขที่หายไปนานจาก 5 งวดล่าสุด)
+    if len(history_list) >= 3:
+        recent_5 = history_list[:5]
+        appeared_recent = set()
+        for draw in recent_5:
+            appeared_recent.update(safe_digits(draw.get("first", "")) + safe_digits(draw.get("back2", "")))
+        for d in range(10):
+            s_d = str(d)
+            if s_d not in appeared_recent:
+                digit_scores[s_d] += r_weight
 
-def run_backtest_analysis(day_name, history_list, daily_number):
-    """Walk-forward backtest: ใช้เฉพาะงวดก่อนหน้าเพื่อทำนายงวดถัดไป"""
-    summary_data, details_data = [], []
-    settings = st.session_state.ai_settings
-    f_weight = float(settings.get("formula_weight", 1.0))
-    c_weight = float(settings.get("cross_weight", 0.9))
-    echo_weight = float(settings.get("echo_weight", 0.7))
-    recovery_weight = float(settings.get("recovery_weight", 0.6))
-    daily_weight = float(settings.get("daily_weight", 1.5))
-
-    # history_list รับเข้ามาเป็นเก่าไปใหม่แล้ว
-    for name, func in formulas:
-        classic_score = weighted_score = 0.0
-        exact_hits = correct_positions = any_digit_hits = valid = 0
-        for index in range(len(history_list) - 1):
-            base = history_list[index]
-            actual_row = history_list[index + 1]
-            nxt = normalize_lottery_number(actual_row.get("back2", ""), 2)
-            base_first = normalize_lottery_number(base.get("first", ""), 6)
-            if len(nxt) != 2 or len(base_first) != 6:
-                continue
-
-            # ชุด CSV แยกตามวันอยู่แล้ว จึงใช้ Daily Number ของวันชุดข้อมูลนี้
-            raw_pred = dynamic_formula_wrapper(func, base_first, "back2", "-")
-            daily_pred = dynamic_formula_wrapper(func, base_first, "back2", daily_number)
-            # ประเมินทั้งสูตรดิบและสูตรผสมวัน แล้วผสานคะแนนตาม Daily Weight
-            # ค่า Daily Weight สูงขึ้น = ให้ผลผสมวันมีอิทธิพลต่อคะแนนมากขึ้น
-            pred = daily_pred
-            raw_pt = calculate_score(raw_pred, nxt)
-            daily_pt = calculate_score(daily_pred, nxt)
-            pt = ((raw_pt + (daily_weight * daily_pt)) / (1.0 + daily_weight)) if daily_weight >= 0 else raw_pt
-            valid += 1
-            classic_score += pt
-            formula_base_weight = c_weight if name == "Cross Multiply" else f_weight
-            recency = (index + 1) / max(1, len(history_list) - 1)
-            temporal_weight = 1.0 + (recency * echo_weight) + ((1.0 - recency) * recovery_weight)
-            weighted_score += pt * temporal_weight * formula_base_weight
-            exact_hits += int(pred == nxt)
-            correct_positions += sum(1 for p_ch, a_ch in zip(pred, nxt) if p_ch == a_ch)
-            hit_count, _ = calculate_digit_accuracy(pred, nxt)
-            any_digit_hits += hit_count
-            details_data.append({
-                "Formula": name,
-                "Date": actual_row.get("date", ""),
-                "Base First": base_first,
-                "Prediction": pred,
-                "Raw Prediction": raw_pred,
-                "Daily Prediction": daily_pred,
-                "Actual": nxt,
-                "Exact Match": "✅ ตรงเป๊ะ" if pred == nxt else ("🟡 เข้าตัว" if hit_count > 0 else "❌ พลาด"),
-                "Score": pt,
-            })
-
-        percent = (any_digit_hits / (valid * 2) * 100) if valid else 0.0
-        exact_pct = (exact_hits / valid * 100) if valid else 0.0
-        pos_acc = (correct_positions / (valid * 2) * 100) if valid else 0.0
-        summary_data.append({
-            "Rank": 0, "Formula": name, "Tests": valid,
-            "Exact Hits": exact_hits, "Exact Match (%)": exact_pct,
-            "Correct Positions": correct_positions, "Position Accuracy (%)": pos_acc,
-            "Any Digit Hits": any_digit_hits,
-            "Any Digit Rate (%)": (any_digit_hits / (valid * 2) * 100) if valid else 0.0,
-            "Raw Score": classic_score,
-            "Weight": c_weight if name == "Cross Multiply" else f_weight,
-            "Weighted Score": weighted_score,
-        })
-
-    df_sum = pd.DataFrame(summary_data)
-    if not df_sum.empty:
-        df_sum = df_sum.sort_values(
-            by=["Weighted Score", "Exact Match (%)", "Position Accuracy (%)"],
-            ascending=False
-        ).reset_index(drop=True)
-        df_sum["Rank"] = df_sum.index + 1
-    return df_sum, pd.DataFrame(details_data), max((len(history_list) - 1), 0)
+    # จัดอันดับตามคะแนน AI Ensemble รวมสูงสุด
+    ranked_digits = sorted(
+        [(d, round(score, 2), raw_digit_counts[d]) for d, score in digit_scores.items()],
+        key=lambda x: (-x[1], -x[2], int(x[0]))
+    )
+    return rows, ranked_digits
 
 def build_formula_back2_rows(base_number, daily_number, actual_back2=None):
     prediction_rows = []
@@ -492,7 +559,7 @@ def build_formula_back2_rows(base_number, daily_number, actual_back2=None):
         back2_val = blend_res[-2:]
         
         if actual_back2 and back2_val == str(actual_back2).zfill(2):
-            back2_display = f"{back2_val} 🏆 (ตัวอย่างสูตรที่ {idx} เข้าเป้า)"
+            back2_display = f"{back2_val} 🏆 (เข้าเป้า)"
         else:
             back2_display = back2_val
 
@@ -516,36 +583,43 @@ menu = st.sidebar.radio("เลือกหน้าเมนู:", [
 ])
 
 # ==========================================
-# 6. ALL-IN-ONE MASTER REPORT 
+# 6. ALL-IN-ONE MASTER REPORT (AI ENSEMBLE)
 # ==========================================
 if menu == "8. All-in-One Master Report":
-    st.title("🏆 THAI AI PROFESSIONAL v8.0 — MASTER REPORT")
+    st.title("🏆 สรุปผลวิเคราะห์หวยรัฐบาลไทย AI Ensemble")
     st.caption(f"เวอร์ชัน: {VERSION}")
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        day_choice = st.selectbox("📅 เลือกวันประจำงวด:", DAYS)
+        day_choice = st.selectbox("📅 เลือกวันประจำงวดที่ออก:", DAYS)
         loaded_history = load_history_by_day(day_choice)
         st.session_state.history = loaded_history
 
-        if st.session_state.current_day != day_choice:
+        # อัปเดตเลขฐานอัตโนมัติเมื่อเปลี่ยนวัน หรือเมื่อเพิ่งเปิดแอปครั้งแรก
+        if st.session_state.current_day != day_choice or not st.session_state.target_number:
             st.session_state.current_day = day_choice
             st.session_state.daily_number = DAILY_NUMBERS.get(day_choice, "462793")
-        # CSV เป็นแหล่งข้อมูลหลัก: ใช้งวดล่าสุดที่เรียงตามวันที่เป็นฐานอัตโนมัติ
-        if loaded_history:
-            st.session_state.target_number = loaded_history[0]["first"]
+            if loaded_history:
+                st.session_state.target_number = loaded_history[0]["first"]
+            else:
+                st.session_state.target_number = "423224"
 
     with col2:
-        if loaded_history and not st.session_state.target_number:
-            st.session_state.target_number = loaded_history[0]["first"]
-
-        target_number = st.text_input(
-            "📌 เลขฐาน 6 หลักงวดล่าสุด:", 
-            value=st.session_state.target_number, 
-            max_chars=6,
-            key=f"target_number_input_{day_choice}_{loaded_history[0]['date'] if loaded_history else 'empty'}_{loaded_history[0]['first'] if loaded_history else 'empty'}"
-        )
-        st.session_state.target_number = target_number
+        col_t1, col_t2 = st.columns([3, 1])
+        with col_t1:
+            target_number = st.text_input(
+                "📌 เลขฐาน 6 หลักงวดล่าสุด:", 
+                value=st.session_state.target_number, 
+                max_chars=6,
+                key="target_number_input"
+            )
+            st.session_state.target_number = target_number
+        with col_t2:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("🔄 ดึงล่าสุด", help="ดึงรางวัลงวดล่าสุดจาก CSV ทันที"):
+                if loaded_history:
+                    st.session_state.target_number = loaded_history[0]["first"]
+                    st.rerun()
 
     with col3:
         daily_number = st.text_input(
@@ -556,124 +630,90 @@ if menu == "8. All-in-One Master Report":
         )
         st.session_state.daily_number = daily_number
 
-    if not st.session_state.history:
-        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} กรุณาตรวจสอบไฟล์ CSV หรือเพิ่มข้อมูลผ่านเมนู 'เพิ่ม/จัดการประวัติหวย'")
+    if loaded_history:
+        latest = loaded_history[0]
+        st.caption(f"📁 ข้อมูลล่าสุดในฐานข้อมูล ({day_choice}): งวดวันที่ **{latest['date']}** | รางวัลที่ 1: **{latest['first']}** | ล่าง: **{latest['back2']}** (รวม {len(loaded_history)} งวด)")
     else:
-        if st.button("🚀 ประมวลผล Master Report", type="primary", use_container_width=True):
-            if len(target_number) != 6 or not target_number.isdigit():
-                st.error("❌ กรุณากรอกเลขฐาน 6 หลักให้ถูกต้อง")
-            elif not daily_number.strip().isdigit():
-                st.error("❌ กรุณากรอกเลขประจำวันเป็นตัวเลขให้ถูกต้อง")
-            else:
-                frequency_rows, frequency, frequency_total = analyse_all_15_formulas(
-                    target_number=target_number,
-                    daily_number=daily_number.strip(),
-                    mode="back2"
-                )
+        st.warning(f"⚠️ ไม่พบข้อมูลประวัติสำหรับวัน {day_choice} ระบบจะคำนวณโดยไม่มีคะแนนถ่วงน้ำหนักย้อนหลัง")
 
-                frequency_counts = dict(frequency)
-                top_digits = [digit for digit, _ in frequency]
-                top_6 = top_digits[:6]
-                remaining = top_digits[6:]
+    if st.button("🚀 ประมวลผล Master Report (AI Ensemble)", type="primary", use_container_width=True):
+        if len(target_number) != 6 or not target_number.isdigit():
+            st.error("❌ กรุณากรอกเลขฐาน 6 หลักให้ถูกต้อง")
+        elif not daily_number.strip().isdigit():
+            st.error("❌ กรุณากรอกเลขประจำวันเป็นตัวเลขให้ถูกต้อง")
+        else:
+            formula_rows, ranked_digits = analyse_ai_ensemble(
+                target_number=target_number,
+                daily_number=daily_number.strip(),
+                history_list=loaded_history,
+                day_name=day_choice,
+                mode="back2"
+            )
 
+            top_digits = [d for d, _, _ in ranked_digits]
+            score_map = {d: sc for d, sc, _ in ranked_digits}
+            count_map = {d: cnt for d, _, cnt in ranked_digits}
+
+            top_6 = top_digits[:6]
+            remaining = top_digits[6:]
+
+            st.markdown(f"""
+                <div style="background-color: #f8fafc; padding: 10px 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-weight: 600; color: #1e293b;">
+                    วัน: {day_choice}  |  เลขฐาน: {target_number}  |  Daily Number: {daily_number.strip()}  |  สูตร: 16 สูตร (AI Weighted)
+                </div>
+            """, unsafe_allow_html=True)
+
+            # การ์ดแสดง 6 อันดับเลขเด่น AI Score
+            cols = st.columns([1, 1, 1, 1, 1, 1, 1.3])
+            colors = ["#0284c7", "#0369a1", "#0284c7", "#0369a1", "#0284c7", "#0369a1"]
+            for i in range(6):
+                d = top_6[i]
+                sc = score_map[d]
+                cnt = count_map[d]
+                with cols[i]:
+                    st.markdown(f"""
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 12px 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                            <div style="font-size: 26px; font-weight: bold; color: {colors[i]};">{d}</div>
+                            <div style="font-size: 12px; font-weight: 600; color: #0f172a; margin-top: 2px;">{sc:.1f} คะแนน</div>
+                            <div style="font-size: 11px; color: #64748b;">({cnt} สูตร)</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+            with cols[6]:
+                rem_text = "<br>".join([f"<b>{d}</b> = {score_map[d]:.1f} ({count_map[d]} สูตร)" for d in remaining])
                 st.markdown(f"""
-                    <div style="background-color: #f8fafc; padding: 10px 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-weight: 600; color: #1e293b;">
-                        วัน: {day_choice}   |   เลขฐาน: {target_number}   |   Daily Number: {daily_number.strip()}   |   จำนวนสูตร: 15   |   จำนวนหลัก: {frequency_total}
+                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 11px; color: #475569; height: 100%; display: flex; align-items: center;">
+                        <div><b>เลขรอง (อันดับ 7-10):</b><br>{rem_text}</div>
                     </div>
                 """, unsafe_allow_html=True)
 
-                cols = st.columns([1, 1, 1, 1, 1, 1, 1.2])
-                colors = ["#0284c7", "#0369a1", "#0284c7", "#0369a1", "#0284c7", "#0369a1"]
-                for i in range(6):
-                    if i < len(top_6):
-                        d = top_6[i]
-                        cnt = frequency_counts.get(d, 0)
-                        with cols[i]:
-                            st.markdown(f"""
-                                <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 12px 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                                    <div style="font-size: 24px; font-weight: bold; color: {colors[i]};">{d}</div>
-                                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">{cnt} ครั้ง</div>
-                                </div>
-                            """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("##### 🎯 ชุดเลขเด่นจัดอันดับตามคะแนน AI Ensemble (ชุด 6, 5, 4, 3 และ 2 ตัว)")
+            
+            set_cols = st.columns(5)
+            def get_stat_str(digits_list):
+                return " | ".join([f"{d}:{score_map[d]:.1f}" for d in digits_list])
 
-                with cols[6]:
-                    rem_text = "   |   ".join([f"{d} = {frequency_counts.get(d, 0)} ครั้ง" for d in remaining])
+            configs = [
+                ("ชุด 6 ตัว", top_digits[:6], "#0f766e"),
+                ("ชุด 5 ตัว", top_digits[:5], "#15803d"),
+                ("ชุด 4 ตัว", top_digits[:4], "#0369a1"),
+                ("ชุด 3 ตัว", top_digits[:3], "#7e22ce"),
+                ("ชุด 2 ตัว", top_digits[:2], "#b45309"),
+            ]
+
+            for idx, (title, d_list, hex_color) in enumerate(configs):
+                with set_cols[idx]:
                     st.markdown(f"""
-                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 11px; color: #475569; height: 100%; display: flex; align-items: center;">
-                            <div><b>เลขที่เหลือ:</b><br>{rem_text}</div>
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 14px 6px;">
+                            <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">{title}</div>
+                            <div style="font-size: 19px; font-weight: bold; color: {hex_color}; letter-spacing: 2px;">{" ".join(d_list)}</div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(d_list)}</div>
                         </div>
                     """, unsafe_allow_html=True)
 
-                st.markdown("<br>", unsafe_allow_html=True)
-
-                st.markdown("##### ชุดเลขเด่นจากความถี่รวม 15 สูตร")
-                set_cols = st.columns(4)
-                
-                def get_stat_str(digits_list):
-                    return " | ".join([f"{d}:{frequency_counts.get(d, 0)}" for d in digits_list])
-
-                set5 = top_digits[:5]
-                with set_cols[0]:
-                    st.markdown(f"""
-                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
-                            <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 5 ตัว</div>
-                            <div style="font-size: 20px; font-weight: bold; color: #15803d; letter-spacing: 3px;">{" ".join(set5)}</div>
-                            <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set5)}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                set4 = top_digits[:4]
-                with set_cols[1]:
-                    st.markdown(f"""
-                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
-                            <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 4 ตัว</div>
-                            <div style="font-size: 20px; font-weight: bold; color: #0369a1; letter-spacing: 3px;">{" ".join(set4)}</div>
-                            <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set4)}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                set3 = top_digits[:3]
-                with set_cols[2]:
-                    st.markdown(f"""
-                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
-                            <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 3 ตัว</div>
-                            <div style="font-size: 20px; font-weight: bold; color: #7e22ce; letter-spacing: 3px;">{" ".join(set3)}</div>
-                            <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set3)}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                set2 = top_digits[:2]
-                with set_cols[3]:
-                    st.markdown(f"""
-                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; padding: 15px;">
-                            <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">ชุด 2 ตัว</div>
-                            <div style="font-size: 20px; font-weight: bold; color: #b45309; letter-spacing: 3px;">{" ".join(set2)}</div>
-                            <div style="font-size: 10px; color: #94a3b8; margin-top: 8px;">{get_stat_str(set2)}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                with st.expander("📋 ดูตารางผลลัพธ์รายสูตร (15 สูตร)", expanded=False):
-                    st.dataframe(pd.DataFrame(frequency_rows), use_container_width=True, hide_index=True)
-
-                # ประเมินประสิทธิภาพรายสูตรจากข้อมูลย้อนหลังแบบ walk-forward
-                st.divider()
-                st.subheader("🧪 ประสิทธิภาพรายสูตรจาก Backtest")
-                if len(loaded_history) >= 2:
-                    chrono_for_master = list(reversed(loaded_history))
-                    perf_summary, _, perf_tests = run_backtest_analysis(day_choice, chrono_for_master, daily_number.strip())
-                    if not perf_summary.empty:
-                        st.caption(f"ทดสอบ {perf_tests} คู่ข้อมูล | จัดอันดับจากคะแนนย้อนหลังที่ปรับน้ำหนัก Echo / Recovery")
-                        perf_view = perf_summary[["Rank", "Formula", "Tests", "Exact Match (%)", "Position Accuracy (%)", "Any Digit Rate (%)", "Weighted Score"]].copy()
-                        perf_view = perf_view.rename(columns={
-                            "Rank": "อันดับ", "Formula": "สูตร", "Tests": "จำนวนงวด",
-                            "Exact Match (%)": "ตรงเป๊ะ (%)", "Position Accuracy (%)": "ถูกตำแหน่ง (%)",
-                            "Any Digit Rate (%)": "ตัวเลขตรง (%)", "Weighted Score": "คะแนนถ่วงน้ำหนัก"
-                        })
-                        st.dataframe(perf_view.round(2), use_container_width=True, hide_index=True)
-                        best_formula = perf_summary.iloc[0]
-                        st.info(f"สูตรที่ทำผลงานย้อนหลังดีที่สุด: {best_formula['Formula']} | ตรงเป๊ะ {best_formula['Exact Match (%)']:.2f}% | ถูกตำแหน่ง {best_formula['Position Accuracy (%)']:.2f}%")
-                else:
-                    st.warning("ข้อมูลย้อนหลังยังไม่เพียงพอสำหรับประเมินประสิทธิภาพรายสูตร (ต้องมีอย่างน้อย 2 งวด)")
+            with st.expander("📋 ดูตารางผลลัพธ์รายสูตร (ครบทั้ง 16 สูตร พร้อมน้ำหนัก AI)", expanded=True):
+                st.dataframe(pd.DataFrame(formula_rows), use_container_width=True, hide_index=True)
 
 # ==========================================
 # 7. MANAGEMENT HISTORY PAGE (GitHub Sync)
@@ -686,30 +726,37 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
     with st.expander("➕ เพิ่มข้อมูลงวดล่าสุดด้วยตนเอง (ซิงก์ขึ้น GitHub อัตโนมัติ)", expanded=True):
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
-            input_date = st.text_input("📅 วันที่ (พ.ศ.) เช่น 01/07/2569", value="01/07/2569")
+            input_date = st.text_input("📅 วันที่ (พ.ศ.) เช่น 16/11/2569", value="16/11/2569")
         with col_f2:
             input_first = st.text_input("🎯 รางวัลที่ 1 (6 หลัก)", max_chars=6, value="")
         with col_f3:
             input_back2 = st.text_input("🔢 เลขท้าย 2 ตัว", max_chars=2, value="")
             
         if st.button("💾 บันทึกและซิงก์ขึ้น GitHub", type="primary"):
-            if input_date.strip() and len(input_first) == 6 and input_first.isdigit() and len(input_back2) == 2 and input_back2.isdigit():
+            if len(input_first) == 6 and input_first.isdigit() and len(input_back2) == 2 and input_back2.isdigit():
                 existing_df = load_csv_data_from_github(target_csv)
                 
                 new_row = pd.DataFrame([{
                     "date_be": input_date.strip(),
-                    "first_prize": input_first.strip(),
-                    "last_2_digits": input_back2.strip()
+                    "first_prize": str(input_first.strip()).zfill(6),
+                    "last_2_digits": str(input_back2.strip()).zfill(2)
                 }])
                 
                 updated_df = pd.concat([new_row, existing_df], ignore_index=True)
                 updated_df = updated_df.drop_duplicates(subset=["date_be", "first_prize"], keep="first")
+                
+                # จัดเรียงวันที่ใน CSV จากใหม่ไปเก่าก่อนบันทึก
+                updated_df["_sort_dt"] = updated_df["date_be"].apply(lambda x: parse_be_date(x) or datetime(1900, 1, 1))
+                updated_df = updated_df.sort_values(by="_sort_dt", ascending=False).drop(columns=["_sort_dt"])
                 
                 expected_cols = ["date_be", "first_prize", "last_2_digits"]
                 updated_df = updated_df[expected_cols]
 
                 success = save_csv_to_github(target_csv, updated_df, input_date.strip())
                 if success:
+                    # อัปเดตเลขฐานในหน้าหลักให้เป็นงวดใหม่ทันที
+                    if st.session_state.current_day == day_upload:
+                        st.session_state.target_number = str(input_first.strip()).zfill(6)
                     st.success(f"✅ บันทึกและซิงก์ข้อมูลลง GitHub (`{target_csv}`) สำเร็จเรียบร้อย!")
                     st.rerun()
             else:
@@ -718,44 +765,47 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
     current_history = load_history_by_day(day_upload)
     if current_history:
         st.subheader(f"📋 ข้อมูลประวัติปัจจุบันของวัน: {day_upload} (รวม {len(current_history)} งวด)")
-        st.caption(f"งวดล่าสุด: {current_history[0]['date']} | รางวัลที่ 1: {current_history[0]['first']} | เลขท้าย 2 ตัว: {current_history[0]['back2']}")
-        st.dataframe(pd.DataFrame(current_history), use_container_width=True, hide_index=True)
+        display_hist = pd.DataFrame(current_history)[["date", "day", "daily_num", "first", "back2"]]
+        display_hist.columns = ["วันที่ (พ.ศ.)", "วันจริง", "เลขประจำวัน", "รางวัลที่ 1", "เลขท้าย 2 ตัว"]
+        st.dataframe(display_hist, use_container_width=True, hide_index=True)
     else:
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
 # ==========================================
-# 8. COMPLETE BACKTEST ENGINE (COMPLETED)
+# 8. COMPLETE BACKTEST ENGINE (REAL DAILY NUM)
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
-    st.title("📈 ระบบทดสอบย้อนหลัง (Walk-Forward Backtest)")
-    st.caption("แสดงผล Backtest แยกรายสูตร พร้อมเลขท้าย 2 ตัวที่คำนวณจากเลขฐานล่าสุด")
+    st.title("📈 ระบบทดสอบย้อนหลัง (Backtest Engine)")
+    st.caption("ทดสอบความแม่นยำรายสูตร โดยเรียงลำดับตามวันที่จริงและใช้เลขประจำวันตรงตามวันออกรางวัลของแต่ละงวด")
 
     bt_col1, bt_col2, bt_col3 = st.columns(3)
     with bt_col1:
         backtest_day = st.selectbox("📅 เลือกวันสำหรับรัน Backtest:", DAYS, key="bt_day")
+        history = load_history_by_day(backtest_day)
         if st.session_state.bt_current_day != backtest_day:
             st.session_state.bt_current_day = backtest_day
             st.session_state.bt_daily_number = DAILY_NUMBERS[backtest_day]
 
     with bt_col2:
+        default_base = history[0]["first"] if history else st.session_state.get("target_number", "423224")
         base_number = st.text_input(
-            "📌 เลขฐาน 6 หลักงวดล่าสุด:",
-            value=st.session_state.get("target_number", "423224"),
+            "📌 เลขฐาน 6 หลักงวดล่าสุด (สำหรับทำนายงวดถัดไป):",
+            value=default_base,
             max_chars=6,
             key="bt_target_number"
         )
 
     with bt_col3:
         daily_number = st.text_input(
-            "🔑 เลขประจำวัน (แก้ไขได้):",
+            "🔑 เลขประจำวันงวดถัดไป (แก้ไขได้):",
             value=st.session_state.bt_daily_number,
             max_chars=10,
             key="bt_daily_number_input"
         )
         st.session_state.bt_daily_number = daily_number
 
-    history = load_history_by_day(backtest_day)
-    st.info(f"วันทดสอบ: {backtest_day} | ประวัติ: {len(history)} งวด | Daily Number: {daily_number.strip()}")
+    use_real_daily = st.checkbox("✅ ใช้เลขประจำวัน (Daily Number) ตรงตามวันออกรางวัลจริงของแต่ละงวดในอดีต", value=True)
+    st.info(f"วันทดสอบ: {backtest_day} | ประวัติ: {len(history)} งวด | โหมดเลขประจำวันย้อนหลัง: {'ตามวันจริงของแต่ละงวด' if use_real_daily else f'ใช้ค่าเดียว ({daily_number.strip()})'}")
 
     if st.button("🚀 รันผล Backtest ทั้งหมด", type="primary", use_container_width=True):
         if len(base_number) != 6 or not base_number.isdigit():
@@ -765,9 +815,9 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
         elif len(history) < 2:
             st.warning(f"⚠️ ข้อมูล {backtest_day} ไม่เพียงพอ ต้องมีอย่างน้อย 2 งวด")
         else:
-            # load_history_by_day ส่งข้อมูลใหม่ไปเก่า จึงกลับเป็นเก่าไปใหม่สำหรับ walk-forward
-            chrono_history = list(reversed(history))
-            summary, details, test_count = run_backtest_analysis(backtest_day, chrono_history, daily_number.strip())
+            summary, details, test_count = run_backtest_analysis(
+                backtest_day, history, daily_number.strip(), use_each_draw_daily=use_real_daily
+            )
             prediction_df = build_formula_back2_rows(base_number, daily_number.strip())
 
             df_bt_detail = summary.merge(prediction_df, on="Formula", how="left")
@@ -776,30 +826,35 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                 "Formula": "สูตร",
                 "Raw": "เลขดิบ (Raw)",
                 "Blended": "เลขผสมวัน (Blended)",
-                "Back2": "เลขท้าย 2 ตัว (Back2)",
-                "Tests": "จำนวนงวดทดสอบ",
-                "Exact Hits": "ถูกตรง 2 ตำแหน่ง",
+                "Back2": "เลขท้าย 2 ตัวงวดถัดไป",
+                "Tests": "งวดทดสอบ",
+                "Exact Hits": "ถูกตรง 2 ตัว",
                 "Exact Match (%)": "Exact Match (%)",
-                "Correct Positions": "จำนวนหลักถูกตำแหน่ง",
-                "Position Accuracy (%)": "ความแม่นยำตำแหน่ง (%)",
-                "Any Digit Hits": "จำนวนตัวเลขที่ตรงกัน",
-                "Any Digit Rate (%)": "ความถี่ตัวเลขตรงกัน (%)",
+                "Correct Positions": "ถูกหลัก",
+                "Position Accuracy (%)": "แม่นยำตำแหน่ง (%)",
                 "Raw Score": "คะแนนดิบ",
                 "Weight": "น้ำหนัก",
                 "Weighted Score": "คะแนนคูณน้ำหนัก",
             })
 
-            st.success(f"✅ ประมวลผลสำเร็จ: ทดสอบย้อนหลัง {test_count} คู่ข้อมูล และคำนวณเลขงวดถัดไปครบ {len(prediction_df)} สูตร")
+            st.success(f"✅ ประมวลผลสำเร็จ: ทดสอบย้อนหลัง {test_count} คู่ข้อมูล (ทำนาย 2 ตัวล่างจากรางวัลที่ 1 งวดก่อนหน้า)")
 
-            st.subheader("📊 ตารางผลลัพธ์รายสูตร + เลขท้าย 2 ตัว")
-            with st.expander("🔍 ดูตารางรายละเอียดทุกสูตร", expanded=True):
-                display_columns = [
-                    "อันดับ", "สูตร", "เลขดิบ (Raw)",
-                    "เลขผสมวัน (Blended)", "เลขท้าย 2 ตัว (Back2)",
-                    "คะแนนคูณน้ำหนัก", "คะแนนดิบ", "Exact Match (%)",
-                    "ความแม่นยำตำแหน่ง (%)", "จำนวนงวดทดสอบ"
-                ]
-                st.dataframe(df_bt_detail[display_columns], use_container_width=True, hide_index=True)
+            st.subheader("📊 ตารางผลลัพธ์รายสูตร + เลขท้าย 2 ตัวงวดถัดไป")
+            display_columns = [
+                "อันดับ", "สูตร", "เลขดิบ (Raw)",
+                "เลขผสมวัน (Blended)", "เลขท้าย 2 ตัวงวดถัดไป",
+                "คะแนนคูณน้ำหนัก", "Exact Match (%)",
+                "แม่นยำตำแหน่ง (%)", "งวดทดสอบ"
+            ]
+            st.dataframe(
+                df_bt_detail[display_columns].style.format({
+                    "คะแนนคูณน้ำหนัก": "{:.2f}",
+                    "Exact Match (%)": "{:.2f}%",
+                    "แม่นยำตำแหน่ง (%)": "{:.2f}%"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
 
             st.divider()
             st.subheader("🏆 TOP 3 FORMULA — ผล Backtest ย้อนหลัง")
@@ -810,25 +865,25 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                     st.metric(
                         label=f"อันดับ {int(item['อันดับ'])}: {item['สูตร']}",
                         value=f"{item['Exact Match (%)']:.2f}%",
-                        delta=f"ความแม่นยำตำแหน่ง {item['ความแม่นยำตำแหน่ง (%)']:.2f}%"
+                        delta=f"แม่นยำตำแหน่ง {item['แม่นยำตำแหน่ง (%)']:.2f}%"
                     )
-                    st.markdown(f"**เลข Back2 งวดถัดไป: `{item['เลขท้าย 2 ตัว (Back2)']}`**")
+                    st.markdown(f"**เลข Back2 งวดถัดไป: `{item['เลขท้าย 2 ตัวงวดถัดไป']}`**")
                     st.caption(f"คะแนนคูณน้ำหนัก: {item['คะแนนคูณน้ำหนัก']:.2f}")
 
             st.divider()
             st.subheader("📜 ประวัติการทายผลย้อนหลังรายงวด (Backtest Logs)")
             with st.expander("🔎 คลิกเพื่อดูประวัติการทายผลย้อนหลังทั้งหมด", expanded=False):
                 if not details.empty:
-                    st.dataframe(details, use_container_width=True, hide_index=True)
-                else:
-                    st.info("ไม่มีข้อมูลรายละเอียดการทดสอบ")
+                    filter_formula = st.selectbox("กรองดูเฉพาะสูตร:", ["ทั้งหมด"] + [f[0] for f in formulas])
+                    filtered_det = details if filter_formula == "ทั้งหมด" else details[details["Formula"] == filter_formula]
+                    st.dataframe(filtered_det, use_container_width=True, hide_index=True)
 
 # ==========================================
-# 9. AI WEIGHT SETTINGS PAGE (NEWLY ADDED)
+# 9. AI WEIGHT SETTINGS PAGE (ACTIVE IN ENGINE)
 # ==========================================
 elif menu == "9. ตั้งค่าน้ำหนัก AI (Settings)":
     st.title("⚙️ ตั้งค่าน้ำหนัก AI และพารามิเตอร์ระบบ")
-    st.caption("ปรับน้ำหนักการจัดอันดับ Backtest: Formula/Cross คูณคะแนนสูตร, Daily เลือกอิทธิพลเลขผสมวัน, Echo เน้นผลงานช่วงใหม่, Recovery ให้น้ำหนักช่วงเก่ามากขึ้น")
+    st.caption("ค่าน้ำหนักทั้งหมดมีผลโดยตรงต่อการจัดอันดับเลขเด่นในหน้า Master Report และ Backtest")
 
     with st.form("ai_settings_form"):
         col_s1, col_s2 = st.columns(2)
@@ -846,21 +901,21 @@ elif menu == "9. ตั้งค่าน้ำหนัก AI (Settings)":
                 step=0.05
             )
             d_weight = st.slider(
-                "น้ำหนักเลขประจำวัน (Daily Weight)",
+                "น้ำหนักเลขประจำวัน (Daily Weight - ตัวคูณเลขผสมวัน)",
                 min_value=0.10, max_value=3.00,
                 value=float(st.session_state.ai_settings["daily_weight"]),
                 step=0.05
             )
         with col_s2:
             e_weight = st.slider(
-                "น้ำหนักเลขสะท้อน (Echo Weight)",
-                min_value=0.10, max_value=3.00,
+                "น้ำหนักเลขสะท้อนงวดล่าสุด (Echo Weight)",
+                min_value=0.00, max_value=3.00,
                 value=float(st.session_state.ai_settings["echo_weight"]),
                 step=0.05
             )
             r_weight = st.slider(
-                "น้ำหนักการฟื้นตัว (Recovery Weight)",
-                min_value=0.10, max_value=3.00,
+                "น้ำหนักเลขดับ/ฟื้นตัวใน 5 งวด (Recovery Weight)",
+                min_value=0.00, max_value=3.00,
                 value=float(st.session_state.ai_settings["recovery_weight"]),
                 step=0.05
             )
@@ -874,7 +929,7 @@ elif menu == "9. ตั้งค่าน้ำหนัก AI (Settings)":
                 "echo_weight": e_weight,
                 "recovery_weight": r_weight,
             }
-            st.success("✅ บันทึกค่าน้ำหนัก AI เรียบร้อยแล้ว!")
+            st.success("✅ บันทึกค่าน้ำหนัก AI เรียบร้อยแล้ว! ระบบ Master Report จะใช้ค่าใหม่ทันที")
 
     if st.button("🔄 รีเซ็ตกลับเป็นค่าเริ่มต้น (Default)"):
         st.session_state.ai_settings = {
