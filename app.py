@@ -1,4 +1,4 @@
-# app.py - THAI AI PROFESSIONAL v7.9 (GitHub API Sync & Append Fix + Editable Daily Number)
+# app.py - THAI AI PROFESSIONAL v7.9 (Complete & Optimized Edition)
 import streamlit as st
 import pandas as pd
 import os
@@ -99,8 +99,9 @@ def get_csv_filename_by_day(day_name):
     }
     return file_map.get(day_name, "thai_lottery_monday_history.csv")
 
+@st.cache_data(ttl=60, show_spinner=False)
 def load_csv_data_from_github(filename):
-    """อ่าน CSV จาก GitHub API แบบสมบูรณ์"""
+    """อ่าน CSV จาก GitHub API แบบสมบูรณ์ พร้อมระบบ Cache 60 วินาที"""
     github_token = st.secrets.get("GITHUB_TOKEN")
     repo_name = st.secrets.get("GITHUB_REPO")
     
@@ -113,7 +114,7 @@ def load_csv_data_from_github(filename):
         }
         file_url = f"https://api.github.com/repos/{repo_name}/contents/{filename}"
         try:
-            res = requests.get(file_url, headers=headers)
+            res = requests.get(file_url, headers=headers, timeout=10)
             if res.status_code == 200:
                 file_data = res.json()
                 content_decoded = base64.b64decode(file_data["content"]).decode("utf-8")
@@ -122,8 +123,8 @@ def load_csv_data_from_github(filename):
                     if col not in df.columns:
                         df[col] = ""
                 return df[expected_cols]
-        except Exception:
-            pass
+        except Exception as e:
+            st.toast(f"⚠️ ไม่สามารถดึงข้อมูลจาก GitHub ได้: {e}")
             
     if os.path.exists(filename):
         try:
@@ -144,7 +145,7 @@ def save_csv_to_github(filename, updated_df, new_date):
     branch = st.secrets.get("GITHUB_BRANCH", "main")
     
     if not github_token or not repo_name:
-        st.error("ยังไม่ได้ตั้งค่า GITHUB_TOKEN หรือ GITHUB_REPO ใน Streamlit Secrets")
+        st.error("❌ ยังไม่ได้ตั้งค่า GITHUB_TOKEN หรือ GITHUB_REPO ใน Streamlit Secrets")
         return False
         
     headers = {
@@ -153,27 +154,30 @@ def save_csv_to_github(filename, updated_df, new_date):
     }
     file_url = f"https://api.github.com/repos/{repo_name}/contents/{filename}"
     
-    res = requests.get(file_url, headers=headers)
-    file_sha = None
-    if res.status_code == 200:
-        file_sha = res.json().get("sha")
+    try:
+        res = requests.get(file_url, headers=headers, timeout=10)
+        file_sha = res.json().get("sha") if res.status_code == 200 else None
         
-    csv_string = updated_df.to_csv(index=False, encoding="utf-8-sig")
-    encoded_content = base64.b64encode(csv_string.encode("utf-8")).decode("utf-8")
-    
-    payload = {
-        "message": f"Update {filename} for {new_date} via Streamlit App",
-        "content": encoded_content,
-        "branch": branch
-    }
-    if file_sha:
-        payload["sha"] = file_sha
+        csv_string = updated_df.to_csv(index=False, encoding="utf-8-sig")
+        encoded_content = base64.b64encode(csv_string.encode("utf-8")).decode("utf-8")
         
-    put_res = requests.put(file_url, headers=headers, json=payload)
-    if put_res.status_code in [200, 201]:
-        return True
-    else:
-        st.error(f"❌ GitHub API Error ({put_res.status_code}): {put_res.text}")
+        payload = {
+            "message": f"Update {filename} for {new_date} via Streamlit App",
+            "content": encoded_content,
+            "branch": branch
+        }
+        if file_sha:
+            payload["sha"] = file_sha
+            
+        put_res = requests.put(file_url, headers=headers, json=payload, timeout=10)
+        if put_res.status_code in [200, 201]:
+            load_csv_data_from_github.clear() # ล้าง Cache เพื่อโหลดข้อมูลใหม่ทันที
+            return True
+        else:
+            st.error(f"❌ GitHub API Error ({put_res.status_code}): {put_res.text}")
+            return False
+    except Exception as e:
+        st.error(f"❌ เกิดข้อผิดพลาดในการเชื่อมต่อ: {e}")
         return False
 
 def load_history_by_day(day_name):
@@ -194,7 +198,7 @@ def load_history_by_day(day_name):
 
         try:
             first_val = str(int(float(raw_first))).zfill(6)
-        except:
+        except ValueError:
             first_val = "000000"
 
         history_list.append({
@@ -209,22 +213,28 @@ def load_history_by_day(day_name):
 # 4. HELPER FUNCTIONS & FORMULAS
 # ==========================================
 def safe_int(value, default=0):
-    try: return int(value)
-    except: return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
 
 def safe_digits(value):
     return "".join(ch for ch in str(value) if ch.isdigit())
 
 def format_result(value, mode="back2"):
     value = safe_digits(value)
-    if mode == "first": return value.zfill(6)[-6:]
-    if mode == "back2": return value.zfill(2)[-2:]
+    if mode == "first":
+        return value.zfill(6)[-6:]
+    if mode == "back2":
+        return value.zfill(2)[-2:]
     return value
 
 def get_target_digits(target, mode="back2"):
     target = safe_digits(target).zfill(6)
-    if mode == "first": return target
-    if mode == "back2": return target[-2:]
+    if mode == "first":
+        return target
+    if mode == "back2":
+        return target[-2:]
     return target
 
 def calculate_digit_accuracy(prediction, answer):
@@ -386,7 +396,7 @@ def run_backtest_analysis(day_name, history_list, daily_number):
 
         for index in range(len(history_list) - 1):
             nxt = history_list[index + 1].get("back2", "")
-            if not nxt: 
+            if not nxt:
                 continue
             valid += 1
             pred = dynamic_formula_wrapper(func, history_list[index].get("first", ""), "back2", daily_number)
@@ -399,20 +409,26 @@ def run_backtest_analysis(day_name, history_list, daily_number):
             if pred == nxt:
                 exact_hits += 1
             
+            # ตรวจสอบตำแหน่งที่ตรงกัน (หลักสิบ / หลักหน่วย)
+            pos_match = sum(1 for p_ch, a_ch in zip(pred, nxt) if p_ch == a_ch)
+            correct_positions += pos_match
+            
             hit_count, _ = calculate_digit_accuracy(pred, nxt)
             any_digit_hits += hit_count
 
             details_data.append({
                 "Formula": name,
                 "Date": history_list[index + 1].get("date", ""),
+                "Base First": history_list[index].get("first", ""),
                 "Prediction": pred,
                 "Actual": nxt,
+                "Exact Match": "✅ ตรงเป๊ะ" if pred == nxt else ("🟡 เข้าตัว" if hit_count > 0 else "❌ พลาด"),
                 "Score": pt
             })
 
         percent = ((classic_score / (valid * 100)) * 100) if valid else 0
         exact_pct = ((exact_hits / valid) * 100) if valid else 0
-        pos_acc = percent
+        pos_acc = ((correct_positions / (valid * 2)) * 100) if valid else 0
 
         summary_data.append({
             "Rank": 0,
@@ -478,11 +494,7 @@ if menu == "8. All-in-One Master Report":
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        day_choice = st.selectbox(
-            "📅 เลือกวันประจำงวด:", 
-            DAYS
-        )
-        
+        day_choice = st.selectbox("📅 เลือกวันประจำงวด:", DAYS)
         loaded_history = load_history_by_day(day_choice)
         st.session_state.history = loaded_history
 
@@ -629,7 +641,7 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         with col_f3:
             input_back2 = st.text_input("🔢 เลขท้าย 2 ตัว", max_chars=2, value="")
             
-        if st.button("💾 บันทึกและซิงก์ขึ้น GitHub"):
+        if st.button("💾 บันทึกและซิงก์ขึ้น GitHub", type="primary"):
             if len(input_first) == 6 and input_first.isdigit() and len(input_back2) == 2 and input_back2.isdigit():
                 existing_df = load_csv_data_from_github(target_csv)
                 
@@ -649,8 +661,6 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
                 if success:
                     st.success(f"✅ บันทึกและซิงก์ข้อมูลลง GitHub (`{target_csv}`) สำเร็จเรียบร้อย!")
                     st.rerun()
-                else:
-                    st.error("❌ เกิดข้อผิดพลาดในการเชื่อมต่อ GitHub API")
             else:
                 st.error("❌ กรุณากรอกรางวัลที่ 1 ให้ครบ 6 หลัก และเลขท้าย 2 ตัวให้ครบ 2 หลักด้วยตัวเลขเท่านั้น")
 
@@ -662,7 +672,7 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
 # ==========================================
-# 8. COMPLETE BACKTEST ENGINE
+# 8. COMPLETE BACKTEST ENGINE (COMPLETED)
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
     st.title("📈 ระบบทดสอบย้อนหลัง (Backtest Engine)")
@@ -693,18 +703,19 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
         st.session_state.bt_daily_number = daily_number
 
     history = load_history_by_day(backtest_day)
-
     st.info(f"วันทดสอบ: {backtest_day} | ประวัติ: {len(history)} งวด | Daily Number: {daily_number.strip()}")
 
     if st.button("🚀 รันผล Backtest ทั้งหมด", type="primary", use_container_width=True):
         if len(base_number) != 6 or not base_number.isdigit():
-            st.error("กรุณากรอกเลขฐานให้ครบ 6 หลัก")
+            st.error("❌ กรุณากรอกเลขฐานให้ครบ 6 หลัก")
         elif not daily_number.strip().isdigit():
-            st.error("กรุณากรอกเลขประจำวันเป็นตัวเลขให้ถูกต้อง")
+            st.error("❌ กรุณากรอกเลขประจำวันเป็นตัวเลขให้ถูกต้อง")
         elif len(history) < 2:
-            st.warning(f"ข้อมูล {backtest_day} ไม่เพียงพอ ต้องมีอย่างน้อย 2 งวด")
+            st.warning(f"⚠️ ข้อมูล {backtest_day} ไม่เพียงพอ ต้องมีอย่างน้อย 2 งวด")
         else:
-            summary, details, test_count = run_backtest_analysis(backtest_day, history, daily_number.strip())
+            # เรียงประวัติจากเก่าไปใหม่เพื่อให้ Backtest คำนวณตามลำดับเวลาจริง
+            chrono_history = list(reversed(history))
+            summary, details, test_count = run_backtest_analysis(backtest_day, chrono_history, daily_number.strip())
             prediction_df = build_formula_back2_rows(base_number, daily_number.strip())
 
             df_bt_detail = summary.merge(prediction_df, on="Formula", how="left")
@@ -726,7 +737,7 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                 "Weighted Score": "คะแนนคูณน้ำหนัก",
             })
 
-            st.success(f"ประมวลผลสำเร็จ: ทดสอบย้อนหลัง {test_count} คู่ข้อมูล และคำนวณเลขงวดถัดไปครบ {len(prediction_df)} สูตร")
+            st.success(f"✅ ประมวลผลสำเร็จ: ทดสอบย้อนหลัง {test_count} คู่ข้อมูล และคำนวณเลขงวดถัดไปครบ {len(prediction_df)} สูตร")
 
             st.subheader("📊 ตารางผลลัพธ์รายสูตร + เลขท้าย 2 ตัว")
             with st.expander("🔍 ดูตารางรายละเอียดทุกสูตร", expanded=True):
@@ -747,33 +758,78 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
                     st.metric(
                         label=f"อันดับ {int(item['อันดับ'])}: {item['สูตร']}",
                         value=f"{item['Exact Match (%)']:.2f}%",
-                        delta=f"ความแม่นยำพิมพ์ {item['ความแม่นยำตำแหน่ง (%)']:.2f}%"
+                        delta=f"ความแม่นยำตำแหน่ง {item['ความแม่นยำตำแหน่ง (%)']:.2f}%"
                     )
-                    st.markdown(f"**เลข Back2 งวดถัดไป: {item['เลขท้าย 2 ตัว (Back2)']}**")
+                    st.markdown(f"**เลข Back2 งวดถัดไป: `{item['เลขท้าย 2 ตัว (Back2)']}`**")
                     st.caption(f"คะแนนคูณน้ำหนัก: {item['คะแนนคูณน้ำหนัก']:.2f}")
 
             st.divider()
-            st.subheader("📈 เปรียบเทียบ Exact Match (%)")
-            chart_data = df_bt_detail.set_index("สูตร")[["Exact Match (%)"]]
-            st.bar_chart(chart_data)
-
-            with st.expander("📥 ดาวน์โหลดรายงาน Backtest"):
-                st.download_button(
-                    "ดาวน์โหลดสรุป Backtest + เลขทำนาย CSV",
-                    df_bt_detail.to_csv(index=False).encode("utf-8-sig"),
-                    file_name=f"backtest_{backtest_day}_with_predictions.csv",
-                    mime="text/csv"
-                )
+            st.subheader("📜 ประวัติการทายผลย้อนหลังรายงวด (Backtest Logs)")
+            with st.expander("🔎 คลิกเพื่อดูประวัติการทายผลย้อนหลังทั้งหมด", expanded=False):
+                if not details.empty:
+                    st.dataframe(details, use_container_width=True, hide_index=True)
+                else:
+                    st.info("ไม่มีข้อมูลรายละเอียดการทดสอบ")
 
 # ==========================================
-# 9. SETTINGS PAGE
+# 9. AI WEIGHT SETTINGS PAGE (NEWLY ADDED)
 # ==========================================
 elif menu == "9. ตั้งค่าน้ำหนัก AI (Settings)":
-    st.title("⚙️ ตั้งค่าน้ำหนัก AI (Weight Settings)")
-    w_f = st.slider("Formula Weight", 0.1, 2.0, st.session_state.ai_settings["formula_weight"])
-    w_c = st.slider("Cross Weight", 0.1, 2.0, st.session_state.ai_settings["cross_weight"])
-    
-    if st.button("บันทึกค่าน้ำหนัก"):
-        st.session_state.ai_settings["formula_weight"] = w_f
-        st.session_state.ai_settings["cross_weight"] = w_c
-        st.success("✅ บันทึกค่าน้ำหนักใหม่เรียบร้อย!")
+    st.title("⚙️ ตั้งค่าน้ำหนัก AI และพารามิเตอร์ระบบ")
+    st.caption("ปรับค่าน้ำหนักสำหรับการคำนวณคะแนนจัดอันดับในระบบ Backtest")
+
+    with st.form("ai_settings_form"):
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            f_weight = st.slider(
+                "น้ำหนักสูตรหลัก (Formula Weight)",
+                min_value=0.10, max_value=3.00,
+                value=float(st.session_state.ai_settings["formula_weight"]),
+                step=0.05
+            )
+            c_weight = st.slider(
+                "น้ำหนักสูตร Cross Multiply (Cross Weight)",
+                min_value=0.10, max_value=3.00,
+                value=float(st.session_state.ai_settings["cross_weight"]),
+                step=0.05
+            )
+            d_weight = st.slider(
+                "น้ำหนักเลขประจำวัน (Daily Weight)",
+                min_value=0.10, max_value=3.00,
+                value=float(st.session_state.ai_settings["daily_weight"]),
+                step=0.05
+            )
+        with col_s2:
+            e_weight = st.slider(
+                "น้ำหนักเลขสะท้อน (Echo Weight)",
+                min_value=0.10, max_value=3.00,
+                value=float(st.session_state.ai_settings["echo_weight"]),
+                step=0.05
+            )
+            r_weight = st.slider(
+                "น้ำหนักการฟื้นตัว (Recovery Weight)",
+                min_value=0.10, max_value=3.00,
+                value=float(st.session_state.ai_settings["recovery_weight"]),
+                step=0.05
+            )
+
+        submitted = st.form_submit_button("💾 บันทึกการตั้งค่า", type="primary")
+        if submitted:
+            st.session_state.ai_settings = {
+                "formula_weight": f_weight,
+                "cross_weight": c_weight,
+                "daily_weight": d_weight,
+                "echo_weight": e_weight,
+                "recovery_weight": r_weight,
+            }
+            st.success("✅ บันทึกค่าน้ำหนัก AI เรียบร้อยแล้ว!")
+
+    if st.button("🔄 รีเซ็ตกลับเป็นค่าเริ่มต้น (Default)"):
+        st.session_state.ai_settings = {
+            "formula_weight": 1.00,
+            "cross_weight": 0.90,
+            "daily_weight": 1.50,
+            "echo_weight": 0.70,
+            "recovery_weight": 0.60,
+        }
+        st.rerun()
