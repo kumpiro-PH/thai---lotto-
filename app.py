@@ -1,4 +1,4 @@
-# app.py - THAI AI PROFESSIONAL v8.0 (AI Ensemble & Full Fix Edition)
+# app.py - THAI AI PROFESSIONAL v8.0 (Complete & Fixed Edition)
 import streamlit as st
 import pandas as pd
 import os
@@ -24,7 +24,7 @@ DAILY_NUMBERS = {
     "Sunday":    "062341",
 }
 
-VERSION = "หวยรัฐบาลไทย by TOMMY v8.0 AI ENSEMBLE"
+VERSION = "หวยรัฐบาลไทย by TOMMY v8.0 AI ENSEMBLE FIXED"
 
 # ==========================================
 # 1. PAGE CONFIG & CUSTOM CSS (Sky Blue Theme)
@@ -87,14 +87,22 @@ if "ai_settings" not in st.session_state:
 # 3. DATE PARSER & GITHUB API CSV LOADER/SAVER
 # ==========================================
 def parse_be_date(date_str):
-    """แปลงวันที่ พ.ศ. (dd/mm/yyyy) เป็น datetime เพื่อเรียงลำดับและหาวันประจำสัปดาห์จริง"""
+    """รองรับวันที่ทั้ง dd/mm/yyyy, dd-mm-yyyy และ yyyy-mm-dd (ทั้ง พ.ศ. และ ค.ศ.)"""
+    s = str(date_str).strip()
+    if not s:
+        return None
     try:
-        parts = str(date_str).strip().split("/")
-        if len(parts) == 3:
-            d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
-            if y > 2400:
-                y -= 543
-            return datetime(y, m, d)
+        sep = "/" if "/" in s else ("-" if "-" in s else None)
+        if sep:
+            parts = [int(p) for p in s.split(sep)]
+            if len(parts) == 3:
+                if parts[0] > 1000:  # รูปแบบ yyyy-mm-dd
+                    y, m, d = parts[0], parts[1], parts[2]
+                else:  # รูปแบบ dd/mm/yyyy
+                    d, m, y = parts[0], parts[1], parts[2]
+                if y > 2400:
+                    y -= 543
+                return datetime(y, m, d)
     except Exception:
         pass
     return None
@@ -387,10 +395,6 @@ def dynamic_formula_wrapper(func, target, mode, daily_number="-"):
     return safe_digits(result).zfill(length)[-length:]
 
 def run_backtest_analysis(day_name, history_list, override_daily_number=None, use_each_draw_daily=True):
-    """
-    รัน Backtest โดยเรียงลำดับจาก เก่า -> ใหม่ ตามวันที่จริง
-    และใช้ Daily Number ประจำวันของงวดนั้นๆ (หรือใช้ค่าที่กำหนดเองหากเลือกโหมดทดสอบค่าเดียว)
-    """
     chrono_history = sorted(history_list, key=lambda x: (x["dt"], -x["orig_idx"]))
     summary_data = []
     details_data = []
@@ -414,9 +418,7 @@ def run_backtest_analysis(day_name, history_list, override_daily_number=None, us
                 continue
             valid += 1
             
-            # เลือกใช้เลขประจำวันของงวดที่กำลังทดสอบจริง หรือเลขที่ผู้ใช้ระบุ
             test_daily = nxt_draw.get("daily_num", override_daily_number) if use_each_draw_daily else override_daily_number
-            
             pred = dynamic_formula_wrapper(func, chrono_history[index].get("first", ""), "back2", test_daily)
             
             pt = calculate_score(pred, nxt)
@@ -474,11 +476,6 @@ def run_backtest_analysis(day_name, history_list, override_daily_number=None, us
     return df_sum, df_det, valid_tests
 
 def analyse_ai_ensemble(target_number, daily_number, history_list, day_name, mode="back2"):
-    """
-    ระบบ AI Ensemble เต็มรูปแบบ:
-    นำค่าน้ำหนักทุกตัว (formula_weight, cross_weight, daily_weight, echo_weight, recovery_weight)
-    และคะแนนผลงานย้อนหลังรายสูตร มาคำนวณคะแนนรวมของตัวเลข 0-9
-    """
     settings = st.session_state.ai_settings
     f_weight = settings.get("formula_weight", 1.0)
     c_weight = settings.get("cross_weight", 0.9)
@@ -486,21 +483,18 @@ def analyse_ai_ensemble(target_number, daily_number, history_list, day_name, mod
     e_weight = settings.get("echo_weight", 0.7)
     r_weight = settings.get("recovery_weight", 0.6)
 
-    # 1. ประเมินประสิทธิภาพย้อนหลังรายสูตร (ถ้ามีประวัติอย่างน้อย 2 งวด)
     perf_multiplier = {name: 1.0 for name, _ in formulas}
     if len(history_list) >= 2:
         df_bt, _, _ = run_backtest_analysis(day_name, history_list, daily_number, use_each_draw_daily=True)
         if not df_bt.empty and df_bt["Weighted Score"].max() > 0:
             max_ws = df_bt["Weighted Score"].max()
             for _, r in df_bt.iterrows():
-                # คูณโบนัสประสิทธิภาพย้อนหลัง 0.5 ถึง 1.5 เท่า
                 perf_multiplier[r["Formula"]] = 0.5 + (r["Weighted Score"] / max_ws)
 
     rows = []
     digit_scores = {str(d): 0.0 for d in range(10)}
     raw_digit_counts = Counter()
 
-    # 2. คำนวณคะแนนทั้ง 16 สูตร (รวม Cross Multiply)
     for name, func in formulas:
         raw_result = dynamic_formula_wrapper(func, target_number, mode, "-")
         blended_result = dynamic_formula_wrapper(func, target_number, mode, daily_number)
@@ -508,11 +502,9 @@ def analyse_ai_ensemble(target_number, daily_number, history_list, day_name, mod
         base_w = c_weight if name == "Cross Multiply" else f_weight
         hist_mult = perf_multiplier.get(name, 1.0)
         
-        # คะแนนจากเลขดิบ (น้ำหนักพื้นฐาน * ประสิทธิภาพสูตร)
         for ch in safe_digits(raw_result):
             digit_scores[ch] += (1.0 * base_w * hist_mult)
             
-        # คะแนนจากเลขผสมวัน (คูณด้วย daily_weight จริง!)
         for ch in safe_digits(blended_result):
             digit_scores[ch] += (1.0 * base_w * d_weight * hist_mult)
             raw_digit_counts[ch] += 1
@@ -525,7 +517,6 @@ def analyse_ai_ensemble(target_number, daily_number, history_list, day_name, mod
             "ท้าย 2 ตัว": blended_result[-2:],
         })
 
-    # 3. คำนวณ Echo Weight (เลขสะท้อนจากงวดล่าสุด: รางวัลที่ 1 และ 2 ตัวล่าง)
     if history_list:
         latest_draw = history_list[0]
         echo_digits = set(safe_digits(latest_draw.get("first", "")) + safe_digits(latest_draw.get("back2", "")))
@@ -533,7 +524,6 @@ def analyse_ai_ensemble(target_number, daily_number, history_list, day_name, mod
             if ch in digit_scores:
                 digit_scores[ch] += e_weight
 
-    # 4. คำนวณ Recovery Weight (เลขดับ/เลขที่หายไปนานจาก 5 งวดล่าสุด)
     if len(history_list) >= 3:
         recent_5 = history_list[:5]
         appeared_recent = set()
@@ -544,7 +534,6 @@ def analyse_ai_ensemble(target_number, daily_number, history_list, day_name, mod
             if s_d not in appeared_recent:
                 digit_scores[s_d] += r_weight
 
-    # จัดอันดับตามคะแนน AI Ensemble รวมสูงสุด
     ranked_digits = sorted(
         [(d, round(score, 2), raw_digit_counts[d]) for d, score in digit_scores.items()],
         key=lambda x: (-x[1], -x[2], int(x[0]))
@@ -595,7 +584,6 @@ if menu == "8. All-in-One Master Report":
         loaded_history = load_history_by_day(day_choice)
         st.session_state.history = loaded_history
 
-        # อัปเดตเลขฐานอัตโนมัติเมื่อเปลี่ยนวัน หรือเมื่อเพิ่งเปิดแอปครั้งแรก
         if st.session_state.current_day != day_choice or not st.session_state.target_number:
             st.session_state.current_day = day_choice
             st.session_state.daily_number = DAILY_NUMBERS.get(day_choice, "462793")
@@ -663,7 +651,6 @@ if menu == "8. All-in-One Master Report":
                 </div>
             """, unsafe_allow_html=True)
 
-            # การ์ดแสดง 6 อันดับเลขเด่น AI Score
             cols = st.columns([1, 1, 1, 1, 1, 1, 1.3])
             colors = ["#0284c7", "#0369a1", "#0284c7", "#0369a1", "#0284c7", "#0369a1"]
             for i in range(6):
@@ -745,7 +732,6 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
                 updated_df = pd.concat([new_row, existing_df], ignore_index=True)
                 updated_df = updated_df.drop_duplicates(subset=["date_be", "first_prize"], keep="first")
                 
-                # จัดเรียงวันที่ใน CSV จากใหม่ไปเก่าก่อนบันทึก
                 updated_df["_sort_dt"] = updated_df["date_be"].apply(lambda x: parse_be_date(x) or datetime(1900, 1, 1))
                 updated_df = updated_df.sort_values(by="_sort_dt", ascending=False).drop(columns=["_sort_dt"])
                 
@@ -754,7 +740,6 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
 
                 success = save_csv_to_github(target_csv, updated_df, input_date.strip())
                 if success:
-                    # อัปเดตเลขฐานในหน้าหลักให้เป็นงวดใหม่ทันที
                     if st.session_state.current_day == day_upload:
                         st.session_state.target_number = str(input_first.strip()).zfill(6)
                     st.success(f"✅ บันทึกและซิงก์ข้อมูลลง GitHub (`{target_csv}`) สำเร็จเรียบร้อย!")
@@ -772,7 +757,7 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
         st.info(f"ยังไม่มีข้อมูลประวัติของวัน {day_upload}")
 
 # ==========================================
-# 8. COMPLETE BACKTEST ENGINE (REAL DAILY NUM)
+# 8. COMPLETE BACKTEST ENGINE (FIXED SYNC)
 # ==========================================
 elif menu == "10. รันระบบทดสอบย้อนหลัง (Backtest)":
     st.title("📈 ระบบทดสอบย้อนหลัง (Backtest Engine)")
@@ -785,15 +770,26 @@ elif menu == "10. รันระบบทดสอบย้อนหลัง (
         if st.session_state.bt_current_day != backtest_day:
             st.session_state.bt_current_day = backtest_day
             st.session_state.bt_daily_number = DAILY_NUMBERS[backtest_day]
+            if history:
+                st.session_state["bt_target_number"] = history[0]["first"]
 
     with bt_col2:
-        default_base = history[0]["first"] if history else st.session_state.get("target_number", "423224")
-        base_number = st.text_input(
-            "📌 เลขฐาน 6 หลักงวดล่าสุด (สำหรับทำนายงวดถัดไป):",
-            value=default_base,
-            max_chars=6,
-            key="bt_target_number"
-        )
+        col_b1, col_b2 = st.columns([3, 1])
+        with col_b1:
+            if "bt_target_number" not in st.session_state or not st.session_state["bt_target_number"]:
+                st.session_state["bt_target_number"] = st.session_state.get("target_number") or (history[0]["first"] if history else "423224")
+            
+            base_number = st.text_input(
+                "📌 เลขฐาน 6 หลักงวดล่าสุด (สำหรับทำนายงวดถัดไป):",
+                max_chars=6,
+                key="bt_target_number"
+            )
+        with col_b2:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("🔄 ล่าสุด", key="bt_sync_btn", help="ดึงรางวัลงวดล่าสุดจาก CSV"):
+                if history:
+                    st.session_state["bt_target_number"] = history[0]["first"]
+                    st.rerun()
 
     with bt_col3:
         daily_number = st.text_input(
