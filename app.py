@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+import os
+from datetime import datetime, date
 from collections import Counter
 from itertools import combinations, permutations
 
@@ -68,8 +69,101 @@ DEFAULT_HISTORY = [
     {"date": "16/10/2569", "day": "Friday", "first": "011781", "front3": ["392", "402"], "back3": ["171", "255"], "back2": "48"}
 ]
 
+def parse_be_date(value):
+    """Parse common Thai/Buddhist or Gregorian date strings for chronological sorting."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    parsed = None
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%y"):
+        try:
+            parsed = datetime.strptime(text, fmt).date()
+            break
+        except ValueError:
+            continue
+    if parsed is None:
+        try:
+            parsed = pd.to_datetime(text, dayfirst=True, errors="coerce")
+            if pd.isna(parsed):
+                return None
+            parsed = parsed.date()
+        except Exception:
+            return None
+    if parsed.year >= 2400:
+        parsed = parsed.replace(year=parsed.year - 543)
+    return parsed
+
+
+def normalize_history_row(row):
+    """Normalize supported CSV columns into the app's internal history schema."""
+    date_value = row.get("date", row.get("date_be", row.get("งวดหวยย้อนหลัง", "")))
+    first_value = row.get("first", row.get("first_prize", row.get("รางวัลที่ 1", "")))
+    back2_value = row.get("back2", row.get("last_2_digits", row.get("เลขท้าย 2 ตัว", "")))
+    front_value = row.get("front3", row.get("front_3_digits", row.get("เลขหน้า 3 ตัว", "")))
+    back_value = row.get("back3", row.get("back_3_digits", row.get("เลขท้าย 3 ตัว", "")))
+    day_value = str(row.get("day", "") or "").strip()
+
+    def to_list(value):
+        if isinstance(value, list):
+            raw_values = value
+        else:
+            raw_values = str(value or "").replace(",", " ").split()
+        return [str(x).strip().zfill(3)[-3:] for x in raw_values if str(x).strip().isdigit()]
+
+    first_digits = "".join(ch for ch in str(first_value) if ch.isdigit())
+    if len(first_digits) != 6:
+        return None
+    first_digits = first_digits.zfill(6)[-6:]
+    back2_digits = "".join(ch for ch in str(back2_value) if ch.isdigit())
+    back2_digits = back2_digits.zfill(2)[-2:] if back2_digits else ""
+
+    parsed_date = parse_be_date(date_value)
+    valid_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    if day_value not in valid_days:
+        day_value = valid_days[parsed_date.weekday()] if parsed_date else ""
+    return {
+        "date": str(date_value or "").strip(),
+        "day": day_value,
+        "first": first_digits,
+        "front3": to_list(front_value),
+        "back3": to_list(back_value),
+        "back2": back2_digits,
+        "_sort_date": parsed_date,
+    }
+
+
+def load_history_csv():
+    """Load history_thai.csv beside this script; fall back to built-in sample history."""
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "history_thai.csv")
+    if not os.path.isfile(csv_path):
+        return [dict(row) for row in DEFAULT_HISTORY], None, "ไม่พบไฟล์ history_thai.csv"
+    try:
+        frame = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
+        normalized = []
+        for record in frame.to_dict(orient="records"):
+            item = normalize_history_row(record)
+            if item:
+                normalized.append(item)
+        if not normalized:
+            return [dict(row) for row in DEFAULT_HISTORY], csv_path, "ไฟล์ CSV ไม่มีแถวข้อมูลที่มีรางวัลที่ 1 ครบ 6 หลัก"
+        # Sort by real calendar date; preserve file order for rows without a parseable date.
+        indexed = list(enumerate(normalized))
+        indexed.sort(key=lambda pair: (pair[1]["_sort_date"] is not None,
+                                       pair[1]["_sort_date"] or date.min,
+                                       pair[0]))
+        result = []
+        for _, item in indexed:
+            item.pop("_sort_date", None)
+            result.append(item)
+        return result, csv_path, None
+    except Exception as exc:
+        return [dict(row) for row in DEFAULT_HISTORY], csv_path, f"อ่าน CSV ไม่สำเร็จ: {exc}"
+
+
+_loaded_history, HISTORY_CSV_PATH, HISTORY_LOAD_WARNING = load_history_csv()
+
 if "history" not in st.session_state:
-    st.session_state.history = [dict(row) for row in DEFAULT_HISTORY]
+    st.session_state.history = _loaded_history
 
 if "ai_settings" not in st.session_state:
     st.session_state.ai_settings = {
@@ -449,10 +543,39 @@ if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
     st.caption(f"เวอร์ชัน: {VERSION}")
 
+    # Refresh CSV on demand so an already-running Streamlit session can pick up new draws.
+    refresh_col, source_col = st.columns([1, 3])
+    with refresh_col:
+        if st.button("🔄 โหลดข้อมูลล่าสุดจาก CSV"):
+            refreshed_history, refreshed_path, refresh_warning = load_history_csv()
+            if refreshed_path and not refresh_warning:
+                st.session_state.history = refreshed_history
+                st.session_state["target_number_input"] = refreshed_history[-1]["first"]
+                st.success(f"โหลดข้อมูลใหม่แล้ว {len(refreshed_history)} งวด")
+                st.rerun()
+            else:
+                st.error(refresh_warning or "ไม่สามารถโหลด CSV ได้")
+    with source_col:
+        if HISTORY_CSV_PATH:
+            st.caption(f"แหล่งข้อมูล: {os.path.basename(HISTORY_CSV_PATH)}")
+        else:
+            st.warning("กำลังใช้ DEFAULT_HISTORY เพราะไม่พบ history_thai.csv ในโฟลเดอร์เดียวกับไฟล์ Python")
+
+    if HISTORY_LOAD_WARNING:
+        st.warning(f"หมายเหตุแหล่งข้อมูล: {HISTORY_LOAD_WARNING}")
+
     col1, col2 = st.columns(2)
     with col1:
         default_target = st.session_state.history[-1]["first"] if st.session_state.history else "723294"
-        target_number = st.text_input("📌 เลขฐาน 6 หลักงวดล่าสุด:", value=default_target, max_chars=6)
+        target_number = st.text_input(
+            "📌 เลขฐาน 6 หลักงวดล่าสุด:",
+            value=default_target,
+            max_chars=6,
+            key="target_number_input"
+        )
+        if st.session_state.history:
+            latest_row = st.session_state.history[-1]
+            st.caption(f"งวดล่าสุดในฐานข้อมูล: {latest_row.get('date', '-')} | รางวัลที่ 1: {latest_row['first']}")
     with col2:
         day_choice = st.selectbox(
             "📅 เลือกวันประจำงวด:",
@@ -604,6 +727,10 @@ elif menu == "1. เพิ่ม/จัดการประวัติหว�
                 st.success("✅ บันทึกข้อมูลสำเร็จ!")
 
     st.subheader("📋 ประวัติสลากย้อนหลังในระบบ")
+    if st.session_state.history:
+        latest_row = st.session_state.history[-1]
+        st.info(f"ข้อมูลล่าสุดในระบบ: {latest_row.get('date', '-')} | รางวัลที่ 1: {latest_row.get('first', '-')}")
+    st.caption("ไฟล์นำเข้าที่รองรับ: history_thai.csv (วางไว้โฟลเดอร์เดียวกับไฟล์ Python; รองรับ date_be, first_prize, last_2_digits)")
     history_df = pd.DataFrame(st.session_state.history)
     st.dataframe(history_df, use_container_width=True, hide_index=True)
     csv_data = history_df.to_csv(index=False).encode("utf-8-sig")
