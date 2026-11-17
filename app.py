@@ -46,7 +46,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-VERSION = "THAI AI PROFESSIONAL v7.8 MASTER AI - FIXED"
+VERSION = "THAI AI PROFESSIONAL v7.8 MASTER AI - FIXED CSV UPLOAD"
 
 # ==========================================
 # 2. DEFAULT HISTORY DATA & INITIALIZATION
@@ -542,6 +542,54 @@ menu = st.sidebar.radio("เลือกหน้าเมนู:", [
 if menu == "8. All-in-One Master Report":
     st.title("🏆 ALL-IN-ONE MASTER REPORT")
     st.caption(f"เวอร์ชัน: {VERSION}")
+
+    # Upload CSV directly from the user's computer. This avoids assuming that
+    # the CSV exists in the server/container folder beside the Python script.
+    uploaded_history = st.file_uploader(
+        "📂 เลือกไฟล์ประวัติหวย CSV",
+        type=["csv"],
+        help="รองรับคอลัมน์ date_be, first_prize, last_2_digits และคอลัมน์รางวัลอื่น ๆ"
+    )
+    if uploaded_history is not None:
+        try:
+            uploaded_frame = pd.read_csv(uploaded_history, dtype=str, encoding="utf-8-sig").fillna("")
+            uploaded_rows = []
+            for record in uploaded_frame.to_dict(orient="records"):
+                normalized = normalize_history_row(record)
+                if normalized:
+                    uploaded_rows.append(normalized)
+            if not uploaded_rows:
+                st.error("ไฟล์ CSV ไม่มีข้อมูลรางวัลที่ 1 ครบ 6 หลัก หรือชื่อคอลัมน์ไม่ตรงกับรูปแบบที่รองรับ")
+            else:
+                indexed_rows = list(enumerate(uploaded_rows))
+                indexed_rows.sort(key=lambda pair: (
+                    pair[1]["_sort_date"] is not None,
+                    pair[1]["_sort_date"] or date.min,
+                    pair[0]
+                ))
+                uploaded_rows = [item for _, item in indexed_rows]
+                for item in uploaded_rows:
+                    item.pop("_sort_date", None)
+                uploaded_latest = uploaded_rows[-1]
+                # Avoid rerunning/resetting the input on every widget interaction.
+                upload_signature = (
+                    uploaded_history.name,
+                    uploaded_history.size,
+                    uploaded_latest.get("date", ""),
+                    uploaded_latest.get("first", "")
+                )
+                if st.session_state.get("_uploaded_history_signature") != upload_signature:
+                    st.session_state.history = uploaded_rows
+                    st.session_state["_uploaded_history_signature"] = upload_signature
+                    st.session_state["target_number_input"] = uploaded_latest["first"]
+                    st.success(
+                        f"นำเข้าข้อมูล {len(uploaded_rows)} งวดแล้ว | "
+                        f"งวดล่าสุด {uploaded_latest.get('date', '-')} | "
+                        f"รางวัลที่ 1 {uploaded_latest['first']}"
+                    )
+                    st.rerun()
+        except Exception as exc:
+            st.error(f"อ่านไฟล์ CSV ไม่สำเร็จ: {exc}")
 
     # Refresh CSV on demand so an already-running Streamlit session can pick up new draws.
     refresh_col, source_col = st.columns([1, 3])
